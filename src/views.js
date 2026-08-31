@@ -36,12 +36,12 @@ function shell(title, body) {
       --panel: #ffffff;
       --line: #000000;
       --text: #000000;
-      --muted: #0645ad;
-      --accent: #0645ad;
+      --muted: #000000;
+      --accent: #000000;
       --input: #ffffff;
-      --accent-soft: #e8f0ff;
-      --warn: #0645ad;
-      --ok: #0645ad;
+      --accent-soft: #ffffff;
+      --warn: #000000;
+      --ok: #000000;
       --bad: #000000;
       --shadow: none;
       --stat-line: #000000;
@@ -56,16 +56,16 @@ function shell(title, body) {
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
     .page {
-      max-width: 1080px;
-      margin: 0 auto;
-      padding: 18px;
+      max-width: 980px;
+      margin: 0;
+      padding: 16px 20px 40px;
     }
     .topbar {
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 16px;
-      margin-bottom: 20px;
+      margin-bottom: 12px;
     }
     .title {
       font-size: 24px;
@@ -81,7 +81,7 @@ function shell(title, body) {
       border: 0;
       background: var(--accent);
       color: #fff;
-      padding: 10px 14px;
+      padding: 7px 12px;
       border-radius: 0;
       font-size: 14px;
       cursor: pointer;
@@ -102,21 +102,21 @@ function shell(title, body) {
     }
     .card {
       background: var(--panel);
-      border: 1px solid var(--line);
+      border: 0;
       border-radius: 0;
-      padding: 18px;
-      margin-bottom: 16px;
+      padding: 0;
+      margin-bottom: 18px;
       box-shadow: none;
     }
     .grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
+      gap: 12px;
     }
     .grid-3 {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
+      gap: 10px;
     }
     label {
       display: block;
@@ -154,21 +154,21 @@ function shell(title, body) {
     }
     .stats-card {
       background: var(--panel);
-      border: 1px solid var(--line);
+      border: 0;
       border-radius: 0;
       margin-bottom: 22px;
       overflow: hidden;
       box-shadow: none;
     }
     .stat {
-      border-right: 1px solid var(--stat-line);
-      padding: 12px;
+      border-right: 0;
+      padding: 0 20px 0 0;
     }
     .stat:last-child {
       border-right: 0;
     }
     .stat .value {
-      font-size: 24px;
+      font-size: 28px;
       font-weight: 700;
       line-height: 1.1;
       margin-top: 8px;
@@ -235,9 +235,9 @@ function shell(title, body) {
       border-radius: 0;
       margin-bottom: 16px;
     }
-    .nav { display: flex; gap: 4px; margin-bottom: 28px; border-bottom: 2px solid var(--line); padding-bottom: 10px; }
-    .nav a { color: var(--text); padding: 8px 12px; font-weight: 700; }
-    .nav a:hover, .nav a.active { background: var(--text); color: var(--panel); text-decoration: none; }
+    .nav { display: flex; gap: 14px; margin-bottom: 16px; border-bottom: 1px solid #000; padding-bottom: 6px; }
+    .nav a { color: #000; padding: 0; }
+    .nav a.active { font-weight: 700; }
     .stat .value { color: var(--accent); font-size: 32px; }
     .card, .stats-card { box-shadow: none; }
     @media (max-width: 900px) {
