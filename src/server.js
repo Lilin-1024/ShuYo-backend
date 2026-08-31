@@ -18,6 +18,7 @@ import {
   renderDashboard,
   renderFeedbackDetail,
   renderFeedbackListPage,
+  renderVersionPage,
   renderLoginPage
 } from './views.js';
 
@@ -472,6 +473,18 @@ app.get('/admin', requireAdmin, async (req, res, next) => {
   }
 });
 
+app.get('/admin/version', requireAdmin, async (req, res, next) => {
+  try {
+    const state = await readState();
+    res.status(200).send(renderVersionPage({
+      state,
+      message: trimText(req.query.message ?? '')
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/admin/feedback', requireAdmin, async (req, res, next) => {
   try {
     const state = await readState();
@@ -539,7 +552,7 @@ app.post('/admin/version', requireAdmin, async (req, res, next) => {
       state.meta.publishedAt = nowIso();
     });
 
-    res.redirect('/admin?message=' + encodeURIComponent('版本设置已保存。'));
+    res.redirect('/admin/version?message=' + encodeURIComponent('版本设置已保存。'));
   } catch (error) {
     next(error);
   }
