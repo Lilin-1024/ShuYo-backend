@@ -32,51 +32,33 @@ function shell(title, body) {
   <title>${escapeHtml(title)}</title>
   <style>
     :root {
-      color-scheme: light dark;
-      --bg: #f1efe9;
-      --panel: #fffdf7;
-      --line: #1f2937;
-      --text: #171717;
-      --muted: #6b6257;
-      --accent: #e4572e;
-      --input: #fffdf7;
-      --accent-soft: #f5c9a9;
-      --warn: #b45309;
-      --ok: #15803d;
-      --bad: #b91c1c;
-      --shadow: 6px 6px 0 #1f2937;
-      --stat-line: #1f2937;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #181818;
-        --panel: #232323;
-        --line: #f1efe9;
-        --text: #e5e7eb;
-        --muted: #9ca3af;
-        --accent: #ff8c61;
-        --input: #232323;
-        --accent-soft: #5a3024;
-        --warn: #fbbf24;
-        --ok: #4ade80;
-        --bad: #f87171;
-        --shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
-        --stat-line: #263241;
-      }
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --line: #000000;
+      --text: #000000;
+      --muted: #0645ad;
+      --accent: #0645ad;
+      --input: #ffffff;
+      --accent-soft: #e8f0ff;
+      --warn: #0645ad;
+      --ok: #0645ad;
+      --bad: #000000;
+      --shadow: none;
+      --stat-line: #000000;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: Arial, Helvetica, sans-serif;
       background: var(--bg);
       color: var(--text);
     }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
     .page {
-      max-width: 1180px;
+      max-width: 1080px;
       margin: 0 auto;
-      padding: 24px;
+      padding: 18px;
     }
     .topbar {
       display: flex;
@@ -115,7 +97,7 @@ function shell(title, body) {
     .btn.small-btn,
     button.small-btn {
       padding: 6px 9px;
-      border-radius: 8px;
+      border-radius: 0;
       font-size: 12px;
     }
     .card {
@@ -124,7 +106,7 @@ function shell(title, body) {
       border-radius: 0;
       padding: 18px;
       margin-bottom: 16px;
-      box-shadow: var(--shadow);
+      box-shadow: none;
     }
     .grid {
       display: grid;
@@ -176,11 +158,11 @@ function shell(title, body) {
       border-radius: 0;
       margin-bottom: 22px;
       overflow: hidden;
-      box-shadow: var(--shadow);
+      box-shadow: none;
     }
     .stat {
       border-right: 1px solid var(--stat-line);
-      padding: 16px;
+      padding: 12px;
     }
     .stat:last-child {
       border-right: 0;
@@ -192,6 +174,8 @@ function shell(title, body) {
       margin-top: 8px;
     }
     .muted { color: var(--muted); }
+    .version-form { display: grid; gap: 12px; }
+    .version-form .grid { gap: 12px; }
     .table {
       width: 100%;
       border-collapse: collapse;
@@ -212,9 +196,8 @@ function shell(title, body) {
       background: var(--accent-soft);
       color: var(--accent);
     }
-    .badge.ok { background: #dcfce7; color: var(--ok); }
-    .badge.warn { background: #fef3c7; color: var(--warn); }
-    .badge.bad { background: #fee2e2; color: var(--bad); }
+    .badge.ok, .badge.warn { background: var(--accent-soft); color: var(--accent); }
+    .badge.bad { background: #000; color: #fff; }
     .split {
       display: grid;
       grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
@@ -241,22 +224,22 @@ function shell(title, body) {
       background: var(--accent-soft);
       border: 1px solid var(--line);
       padding: 12px 14px;
-      border-radius: 12px;
+      border-radius: 0;
       margin-bottom: 16px;
     }
     .error {
-      background: rgba(185, 28, 28, 0.1);
-      border: 1px solid rgba(185, 28, 28, 0.24);
-      color: var(--bad);
+      background: var(--accent-soft);
+      border: 1px solid var(--line);
+      color: var(--text);
       padding: 12px 14px;
-      border-radius: 12px;
+      border-radius: 0;
       margin-bottom: 16px;
     }
     .nav { display: flex; gap: 4px; margin-bottom: 28px; border-bottom: 2px solid var(--line); padding-bottom: 10px; }
     .nav a { color: var(--text); padding: 8px 12px; font-weight: 700; }
     .nav a:hover, .nav a.active { background: var(--text); color: var(--panel); text-decoration: none; }
     .stat .value { color: var(--accent); font-size: 32px; }
-    .card, .stats-card { box-shadow: var(--shadow); }
+    .card, .stats-card { box-shadow: none; }
     @media (max-width: 900px) {
       .grid, .grid-3, .stats, .split {
         grid-template-columns: 1fr;
@@ -461,7 +444,6 @@ function renderDashboard({ state, feedbackItems, announcementItems, presence = {
     <div class="topbar">
       <div>
         <h1 class="title">${escapeHtml(meta.appName)} 后台</h1>
-        <div class="subtitle">${escapeHtml(meta.appName)}</div>
       </div>
       <div class="row">
         <a class="btn secondary" href="/admin/feedback">查看反馈</a>
@@ -497,7 +479,7 @@ function renderDashboard({ state, feedbackItems, announcementItems, presence = {
 function renderVersionPage({ state, message = '' }) {
   const meta = state.meta;
   const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
-  return shell('版本设置', `<div class="nav"><a href="/admin">仪表盘</a><a class="active" href="/admin/version">版本</a><a href="/admin/announcements">公告</a><a href="/admin/feedback">反馈</a><a style="margin-left:auto" href="/admin/logout">退出</a></div>${notice}<div class="card"><h1 class="title">版本设置</h1><form method="post" action="/admin/version"><div class="grid"><div><label>应用名称</label><input name="appName" value="${escapeHtml(meta.appName)}" /></div><div><label>下载地址</label><input name="downloadUrl" value="${escapeHtml(meta.downloadUrl)}" /></div><div><label>最新版本号</label><input name="latestVersion" value="${escapeHtml(meta.latestVersion)}" required /></div><div><label>Build 号</label><input name="latestBuild" type="number" min="1" value="${escapeHtml(meta.latestBuild)}" required /></div><div><label>更新标题</label><input name="updateTitle" value="${escapeHtml(meta.updateTitle)}" /></div><div><label>强制更新</label><select name="forceUpdate"><option value="false"${meta.forceUpdate ? '' : ' selected'}>否</option><option value="true"${meta.forceUpdate ? ' selected' : ''}>是</option></select></div></div><label>更新说明</label><textarea name="updateMessage">${escapeHtml(meta.updateMessage)}</textarea><label>弹窗通告</label><textarea name="noticeText">${escapeHtml(meta.noticeText)}</textarea><button type="submit">保存</button></form></div>`);
+  return shell('版本设置', `<div class="nav"><a href="/admin">仪表盘</a><a class="active" href="/admin/version">版本</a><a href="/admin/announcements">公告</a><a href="/admin/feedback">反馈</a><a style="margin-left:auto" href="/admin/logout">退出</a></div>${notice}<div class="card"><h1 class="title">版本设置</h1><form class="version-form" method="post" action="/admin/version"><div class="grid"><div><label>应用名称</label><input name="appName" value="${escapeHtml(meta.appName)}" /></div><div><label>下载地址</label><input name="downloadUrl" value="${escapeHtml(meta.downloadUrl)}" /></div><div><label>最新版本号</label><input name="latestVersion" value="${escapeHtml(meta.latestVersion)}" required /></div><div><label>Build 号</label><input name="latestBuild" type="number" min="1" value="${escapeHtml(meta.latestBuild)}" required /></div><div><label>更新标题</label><input name="updateTitle" value="${escapeHtml(meta.updateTitle)}" /></div><div><label>强制更新</label><select name="forceUpdate"><option value="false"${meta.forceUpdate ? '' : ' selected'}>否</option><option value="true"${meta.forceUpdate ? ' selected' : ''}>是</option></select></div></div><label>更新说明</label><textarea name="updateMessage">${escapeHtml(meta.updateMessage)}</textarea><label>弹窗通告</label><textarea name="noticeText">${escapeHtml(meta.noticeText)}</textarea><button type="submit">保存</button></form></div>`);
 }
 
 function renderFeedbackListPage({ state, feedbackItems, message = '' }) {
