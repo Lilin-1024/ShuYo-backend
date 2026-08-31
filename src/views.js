@@ -33,30 +33,30 @@ function shell(title, body) {
   <style>
     :root {
       color-scheme: light dark;
-      --bg: #f4f6f8;
-      --panel: #ffffff;
-      --line: #d8dee6;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --accent: #2563eb;
-      --input: #ffffff;
-      --accent-soft: #dbeafe;
+      --bg: #f1efe9;
+      --panel: #fffdf7;
+      --line: #1f2937;
+      --text: #171717;
+      --muted: #6b6257;
+      --accent: #e4572e;
+      --input: #fffdf7;
+      --accent-soft: #f5c9a9;
       --warn: #b45309;
       --ok: #15803d;
       --bad: #b91c1c;
-      --shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-      --stat-line: #e5e7eb;
+      --shadow: 6px 6px 0 #1f2937;
+      --stat-line: #1f2937;
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #0f141b;
-        --panel: #171d26;
-        --line: #2d3745;
+        --bg: #181818;
+        --panel: #232323;
+        --line: #f1efe9;
         --text: #e5e7eb;
         --muted: #9ca3af;
-        --accent: #7bb2ff;
-        --input: #111821;
-        --accent-soft: #17263d;
+        --accent: #ff8c61;
+        --input: #232323;
+        --accent-soft: #5a3024;
         --warn: #fbbf24;
         --ok: #4ade80;
         --bad: #f87171;
@@ -100,7 +100,7 @@ function shell(title, body) {
       background: var(--accent);
       color: #fff;
       padding: 10px 14px;
-      border-radius: 10px;
+      border-radius: 0;
       font-size: 14px;
       cursor: pointer;
     }
@@ -121,7 +121,7 @@ function shell(title, body) {
     .card {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 16px;
+      border-radius: 0;
       padding: 18px;
       margin-bottom: 16px;
       box-shadow: var(--shadow);
@@ -149,7 +149,7 @@ function shell(title, body) {
     select {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: 0;
       padding: 10px 12px;
       font: inherit;
       background: var(--input);
@@ -173,7 +173,7 @@ function shell(title, body) {
     .stats-card {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 16px;
+      border-radius: 0;
       margin-bottom: 22px;
       overflow: hidden;
       box-shadow: var(--shadow);
@@ -207,7 +207,7 @@ function shell(title, body) {
       display: inline-flex;
       align-items: center;
       padding: 4px 8px;
-      border-radius: 999px;
+      border-radius: 0;
       font-size: 12px;
       background: var(--accent-soft);
       color: var(--accent);
@@ -252,6 +252,11 @@ function shell(title, body) {
       border-radius: 12px;
       margin-bottom: 16px;
     }
+    .nav { display: flex; gap: 4px; margin-bottom: 28px; border-bottom: 2px solid var(--line); padding-bottom: 10px; }
+    .nav a { color: var(--text); padding: 8px 12px; font-weight: 700; }
+    .nav a:hover, .nav a.active { background: var(--text); color: var(--panel); text-decoration: none; }
+    .stat .value { color: var(--accent); font-size: 32px; }
+    .card, .stats-card { box-shadow: var(--shadow); }
     @media (max-width: 900px) {
       .grid, .grid-3, .stats, .split {
         grid-template-columns: 1fr;
@@ -437,24 +442,29 @@ function renderAnnouncementItems(announcementItems, returnTo) {
     .join('');
 }
 
+function adminNav(active) {
+  const links = [['', '仪表盘'], ['version', '版本'], ['announcements', '公告'], ['feedback', '反馈']];
+  return `<div class="nav">${links.map(([path, label]) => `<a class="${active === (path || 'dashboard') ? 'active' : ''}" href="/admin${path ? `/${path}` : ''}">${label}</a>`).join('')}<a style="margin-left:auto" href="/admin/logout">退出</a></div>`;
+}
+
 function renderDashboard({ state, feedbackItems, announcementItems, presence = {}, message = '' }) {
   const meta = state.meta;
   const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
   const openCount = feedbackItems.filter((item) => item.status === 'open').length;
   const repliedCount = feedbackItems.filter((item) => item.status === 'replied').length;
   const closedCount = feedbackItems.filter((item) => item.status === 'closed').length;
-  const latestFeedback = feedbackItems.slice(0, 5);
-  const latestAnnouncements = announcementItems.slice(0, 4);
+  const latestFeedback = feedbackItems.slice(0, 6);
 
   return shell(
     'Lehu 后台',
-    `<div class="topbar">
+    `<div class="nav"><a class="active" href="/admin">仪表盘</a><a href="/admin/version">版本</a><a href="/admin/announcements">公告</a><a href="/admin/feedback">反馈</a><a style="margin-left:auto" href="/admin/logout">退出</a></div>
+    <div class="topbar">
       <div>
         <h1 class="title">${escapeHtml(meta.appName)} 后台</h1>
-        <div class="subtitle">版本检查、公告、反馈与回复都在这里处理。</div>
+        <div class="subtitle">${escapeHtml(meta.appName)}</div>
       </div>
       <div class="row">
-        <a class="btn secondary" href="/admin/logout">退出登录</a>
+        <a class="btn secondary" href="/admin/feedback">查看反馈</a>
       </div>
     </div>
     ${notice}
@@ -466,96 +476,28 @@ function renderDashboard({ state, feedbackItems, announcementItems, presence = {
         <div class="stat"><div class="muted">累计用户</div><div class="value">${Number(presence.total ?? 0)}</div></div>
       </div>
     </div>
-
-    <div class="card">
-      <h2 class="title" style="font-size: 20px;">版本设置</h2>
-      <p class="subtitle">客户端启动时会读取这里的内容。</p>
-      <form method="post" action="/admin/version">
-        <div class="grid">
-          <div>
-            <label for="appName">应用名称</label>
-            <input id="appName" name="appName" type="text" value="${escapeHtml(meta.appName)}" />
-          </div>
-          <div>
-            <label for="downloadUrl">下载地址</label>
-            <input id="downloadUrl" name="downloadUrl" type="text" value="${escapeHtml(meta.downloadUrl)}" placeholder="https://..." />
-          </div>
-          <div>
-            <label for="latestVersion">最新版本号</label>
-            <input id="latestVersion" name="latestVersion" type="text" value="${escapeHtml(meta.latestVersion)}" />
-          </div>
-          <div>
-            <label for="latestBuild">Build 号（增加会触发更新）</label>
-            <input id="latestBuild" name="latestBuild" type="number" min="1" step="1" value="${escapeHtml(meta.latestBuild)}" />
-          </div>
-          <div>
-            <label for="updateTitle">更新标题</label>
-            <input id="updateTitle" name="updateTitle" type="text" value="${escapeHtml(meta.updateTitle)}" />
-          </div>
-          <div>
-            <label for="forceUpdate">强制更新</label>
-            <select id="forceUpdate" name="forceUpdate">
-              <option value="false"${meta.forceUpdate ? '' : ' selected'}>否</option>
-              <option value="true"${meta.forceUpdate ? ' selected' : ''}>是</option>
-            </select>
-          </div>
-        </div>
-        <div style="margin-top: 12px;">
-          <label for="updateMessage">更新说明</label>
-          <textarea id="updateMessage" name="updateMessage">${escapeHtml(meta.updateMessage)}</textarea>
-        </div>
-        <div style="margin-top: 12px;">
-          <label for="noticeText">弹窗通告</label>
-          <textarea id="noticeText" name="noticeText">${escapeHtml(meta.noticeText)}</textarea>
-        </div>
-        <div style="margin-top: 16px;">
-          <button type="submit">保存版本设置</button>
-        </div>
-      </form>
+    <div class="stats-card">
+      <div class="stats">
+        <div class="stat"><div class="muted">总反馈</div><div class="value">${feedbackItems.length}</div></div>
+        <div class="stat"><div class="muted">待处理</div><div class="value">${openCount}</div></div>
+        <div class="stat"><div class="muted">已回复</div><div class="value">${repliedCount}</div></div>
+        <div class="stat"><div class="muted">已关闭</div><div class="value">${closedCount}</div></div>
+      </div>
     </div>
 
-    <div class="split">
-      <div class="card">
-        <div class="row" style="justify-content: space-between; align-items: center;">
-          <h2 class="title" style="font-size: 20px;">最近反馈</h2>
-          <a href="/admin/feedback">查看全部</a>
-        </div>
-        <p class="subtitle">点击标题进入单条详情和回复页。</p>
+    <div class="card">
+        <div class="row" style="justify-content: space-between; align-items: center;"><h2 class="title" style="font-size: 20px;">反馈概况</h2><a href="/admin/feedback">全部反馈</a></div>
         <div class="item-list">
           ${renderFeedbackItems(latestFeedback, state, '/admin')}
         </div>
-      </div>
-
-      <div class="card">
-        <div class="row" style="justify-content: space-between; align-items: center;">
-          <h2 class="title" style="font-size: 20px;">公告</h2>
-          <a href="/admin/announcements">查看全部</a>
-        </div>
-        <p class="subtitle">最近创建的公告会优先显示。</p>
-        <form method="post" action="/admin/announcements">
-          <input type="hidden" name="returnTo" value="/admin" />
-          <label for="announcementTitle">公告标题</label>
-          <input id="announcementTitle" name="title" type="text" required />
-          <div style="margin-top: 12px;">
-            <label for="announcementContent">公告内容</label>
-            <textarea id="announcementContent" name="content" required></textarea>
-          </div>
-          <div class="row" style="margin-top: 12px;">
-            <label style="margin: 0; display: flex; align-items: center; gap: 8px;">
-              <input type="checkbox" name="active" checked />
-              启用为当前公告
-            </label>
-          </div>
-          <div style="margin-top: 12px;">
-            <button type="submit">发布公告</button>
-          </div>
-        </form>
-        <div style="margin-top: 18px;">
-          ${renderAnnouncementItems(latestAnnouncements, '/admin')}
-        </div>
-      </div>
     </div>`
   );
+}
+
+function renderVersionPage({ state, message = '' }) {
+  const meta = state.meta;
+  const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
+  return shell('版本设置', `<div class="nav"><a href="/admin">仪表盘</a><a class="active" href="/admin/version">版本</a><a href="/admin/announcements">公告</a><a href="/admin/feedback">反馈</a><a style="margin-left:auto" href="/admin/logout">退出</a></div>${notice}<div class="card"><h1 class="title">版本设置</h1><form method="post" action="/admin/version"><div class="grid"><div><label>应用名称</label><input name="appName" value="${escapeHtml(meta.appName)}" /></div><div><label>下载地址</label><input name="downloadUrl" value="${escapeHtml(meta.downloadUrl)}" /></div><div><label>最新版本号</label><input name="latestVersion" value="${escapeHtml(meta.latestVersion)}" required /></div><div><label>Build 号</label><input name="latestBuild" type="number" min="1" value="${escapeHtml(meta.latestBuild)}" required /></div><div><label>更新标题</label><input name="updateTitle" value="${escapeHtml(meta.updateTitle)}" /></div><div><label>强制更新</label><select name="forceUpdate"><option value="false"${meta.forceUpdate ? '' : ' selected'}>否</option><option value="true"${meta.forceUpdate ? ' selected' : ''}>是</option></select></div></div><label>更新说明</label><textarea name="updateMessage">${escapeHtml(meta.updateMessage)}</textarea><label>弹窗通告</label><textarea name="noticeText">${escapeHtml(meta.noticeText)}</textarea><button type="submit">保存</button></form></div>`);
 }
 
 function renderFeedbackListPage({ state, feedbackItems, message = '' }) {
@@ -564,7 +506,7 @@ function renderFeedbackListPage({ state, feedbackItems, message = '' }) {
 
   return shell(
     '反馈列表',
-    `<div class="topbar">
+    `${adminNav('feedback')}<div class="topbar">
       <div>
         <h1 class="title">反馈列表</h1>
         <div class="subtitle"><a href="/admin">返回后台</a> · 共 ${feedbackItems.length} 条，${openCount} 条待处理</div>
@@ -595,7 +537,7 @@ function renderAnnouncementListPage({ state, announcementItems, message = '' }) 
 
   return shell(
     '公告列表',
-    `<div class="topbar">
+    `${adminNav('announcements')}<div class="topbar">
       <div>
         <h1 class="title">公告列表</h1>
         <div class="subtitle"><a href="/admin">返回后台</a> · 共 ${announcementItems.length} 条，${activeCount} 条启用中</div>
@@ -647,7 +589,7 @@ function renderFeedbackDetail({ state, item, message = '' }) {
 
   return shell(
     `反馈 ${item.id}`,
-    `<div class="topbar">
+    `${adminNav('feedback')}<div class="topbar">
       <div>
         <h1 class="title">反馈详情</h1>
         <div class="subtitle"><a href="/admin">返回后台</a> · ${escapeHtml(item.id)}</div>
@@ -749,5 +691,6 @@ export {
   renderFeedbackDetail,
   renderFeedbackListPage,
   renderLoginPage,
+  renderVersionPage,
   shell
 };
