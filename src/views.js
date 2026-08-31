@@ -79,20 +79,22 @@ function shell(title, body) {
     }
     .btn, button {
       border: 0;
-      background: var(--accent);
-      color: #fff;
-      padding: 7px 12px;
+      background: #fff;
+      color: #000;
+      padding: 4px 0;
       border-radius: 0;
       font-size: 14px;
       cursor: pointer;
     }
+    .btn:hover, button:hover { text-decoration: underline; }
     .btn.secondary {
       background: var(--accent-soft);
       color: var(--text);
     }
     .btn.danger,
     button.danger {
-      background: var(--bad);
+      background: #fff;
+      color: #000;
     }
     .btn.small-btn,
     button.small-btn {
@@ -130,9 +132,9 @@ function shell(title, body) {
     textarea,
     select {
       width: 100%;
-      border: 1px solid var(--line);
+      border: 1px solid #aaa;
       border-radius: 0;
-      padding: 10px 12px;
+      padding: 8px 6px;
       font: inherit;
       background: var(--input);
       color: var(--text);
@@ -174,8 +176,8 @@ function shell(title, body) {
       margin-top: 8px;
     }
     .muted { color: var(--muted); }
-    .version-form { display: grid; gap: 12px; }
-    .version-form .grid { gap: 12px; }
+    .version-form { display: grid; grid-template-columns: 1fr; gap: 12px; max-width: 760px; }
+    .version-form .grid { grid-template-columns: 1fr; gap: 12px; }
     .table {
       width: 100%;
       border-collapse: collapse;
@@ -184,7 +186,7 @@ function shell(title, body) {
     .table th, .table td {
       text-align: left;
       padding: 10px 8px;
-      border-bottom: 1px solid var(--line);
+      border-bottom: 0;
       vertical-align: top;
     }
     .badge {
@@ -209,7 +211,7 @@ function shell(title, body) {
     }
     .item {
       padding: 12px 0;
-      border-bottom: 1px solid var(--line);
+      border-bottom: 0;
     }
     .item:last-child { border-bottom: 0; }
     .small {
@@ -222,23 +224,23 @@ function shell(title, body) {
     }
     .notice {
       background: var(--accent-soft);
-      border: 1px solid var(--line);
+      border: 0;
       padding: 12px 14px;
       border-radius: 0;
       margin-bottom: 16px;
     }
     .error {
       background: var(--accent-soft);
-      border: 1px solid var(--line);
+      border: 0;
       color: var(--text);
       padding: 12px 14px;
       border-radius: 0;
       margin-bottom: 16px;
     }
-    .nav { display: flex; gap: 14px; margin-bottom: 16px; border-bottom: 1px solid #000; padding-bottom: 6px; }
+    .nav { display: flex; gap: 14px; margin-bottom: 16px; }
     .nav a { color: #000; padding: 0; }
     .nav a.active { font-weight: 700; }
-    .stat .value { color: var(--accent); font-size: 32px; }
+    .stat .value { color: var(--accent); font-size: 28px; }
     .card, .stats-card { box-shadow: none; }
     @media (max-width: 900px) {
       .grid, .grid-3, .stats, .split {
