@@ -59,6 +59,12 @@ const feedbackRateLimit = createRateLimit({
   message: '反馈提交过于频繁，请稍后再试。'
 });
 
+const presenceRateLimit = createRateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  message: '统计请求过于频繁，请稍后再试。'
+});
+
 const loginRateLimit = createRateLimit({
   windowMs: 10 * 60 * 1000,
   max: 10,
@@ -94,6 +100,40 @@ function validateLength(value, max, label) {
   if (value.length > max) {
     throw new Error(`${label} 不能超过 ${max} 个字符`);
   }
+}
+
+function shanghaiDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function presenceAccountKey(userId) {
+  const secret = process.env.PRESENCE_HMAC_SECRET ?? process.env.COOKIE_SECRET ?? 'change-this-presence-secret';
+  return crypto.createHmac('sha256', secret).update(String(userId)).digest('hex');
+}
+
+function presenceStats(state) {
+  const today = shanghaiDateKey();
+  const now = Date.now();
+  const countSince = (days) => {
+    const cutoff = new Date(now - (days - 1) * 24 * 60 * 60 * 1000);
+    const cutoffKey = shanghaiDateKey(cutoff);
+    return Object.values(state.presence ?? {}).filter((item) =>
+      Array.isArray(item.activeDates) && item.activeDates.some((day) => day >= cutoffKey && day <= today)
+    ).length;
+  };
+  return {
+    active1d: countSince(1),
+    active3d: countSince(3),
+    active7d: countSince(7),
+    total: Object.keys(state.presence ?? {}).length
+  };
 }
 
 function selectLatestAnnouncement(announcements) {
@@ -308,6 +348,43 @@ app.post('/api/v1/feedback', feedbackRateLimit, async (req, res, next) => {
   }
 });
 
+app.post('/api/v1/presence/heartbeat', presenceRateLimit, async (req, res, next) => {
+  try {
+    const userId = Number.parseInt(String(req.body.userId ?? ''), 10);
+    const installationId = trimText(req.body.installationId ?? '');
+    const appVersion = trimText(req.body.appVersion ?? '');
+    const platform = trimText(req.body.platform ?? '');
+    if (!Number.isSafeInteger(userId) || userId <= 0 || !installationId) {
+      res.status(400).json({ success: false, error: '统计参数无效。' });
+      return;
+    }
+    validateLength(installationId, 120, '安装标识');
+    validateLength(appVersion, 60, '客户端版本');
+    validateLength(platform, 60, '平台信息');
+
+    const today = shanghaiDateKey();
+    const accountKey = presenceAccountKey(userId);
+    await mutateState((state) => {
+      state.presence = state.presence && typeof state.presence === 'object' ? state.presence : {};
+      const previous = state.presence[accountKey] ?? {};
+      const activeDates = Array.isArray(previous.activeDates) ? previous.activeDates : [];
+      if (!activeDates.includes(today)) activeDates.push(today);
+      activeDates.sort();
+      state.presence[accountKey] = {
+        firstSeenAt: previous.firstSeenAt ?? nowIso(),
+        lastSeenAt: nowIso(),
+        activeDates: activeDates.slice(-7),
+        installationKey: crypto.createHash('sha256').update(installationId).digest('hex'),
+        appVersion,
+        platform
+      };
+    });
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/v1/feedback/:id', async (req, res, next) => {
   try {
     const { item } = await getFeedbackById(req.params.id);
@@ -379,12 +456,14 @@ app.get('/admin', requireAdmin, async (req, res, next) => {
     const state = await readState();
     const feedbackItems = [...state.feedback].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     const announcementItems = [...state.announcements].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    const presence = presenceStats(state);
 
     res.status(200).send(
       renderDashboard({
         state,
         feedbackItems,
         announcementItems,
+        presence,
         message: trimText(req.query.message ?? '')
       })
     );

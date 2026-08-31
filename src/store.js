@@ -36,7 +36,8 @@ function defaultState() {
     meta: defaultMeta(),
     announcements: [],
     feedback: [],
-    blockedFeedbackDevices: []
+    blockedFeedbackDevices: [],
+    presence: {}
   };
 }
 
@@ -80,8 +81,11 @@ function normalizeState(raw) {
   const announcements = Array.isArray(raw?.announcements) ? raw.announcements : [];
   const feedback = Array.isArray(raw?.feedback) ? raw.feedback : [];
   const blockedFeedbackDevices = normalizeBlockedFeedbackDevices(raw?.blockedFeedbackDevices);
+  const presence = raw?.presence && typeof raw.presence === 'object' && !Array.isArray(raw.presence)
+    ? raw.presence
+    : {};
 
-  return { meta, announcements, feedback, blockedFeedbackDevices };
+  return { meta, announcements, feedback, blockedFeedbackDevices, presence };
 }
 
 async function ensureStorage() {
