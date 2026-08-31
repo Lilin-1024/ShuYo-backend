@@ -437,7 +437,7 @@ function renderAnnouncementItems(announcementItems, returnTo) {
     .join('');
 }
 
-function renderDashboard({ state, feedbackItems, announcementItems, message = '' }) {
+function renderDashboard({ state, feedbackItems, announcementItems, presence = {}, message = '' }) {
   const meta = state.meta;
   const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
   const openCount = feedbackItems.filter((item) => item.status === 'open').length;
@@ -460,10 +460,10 @@ function renderDashboard({ state, feedbackItems, announcementItems, message = ''
     ${notice}
     <div class="stats-card">
       <div class="stats">
-        <div class="stat"><div class="muted">总反馈</div><div class="value">${feedbackItems.length}</div></div>
-        <div class="stat"><div class="muted">待处理</div><div class="value">${openCount}</div></div>
-        <div class="stat"><div class="muted">已回复</div><div class="value">${repliedCount}</div></div>
-        <div class="stat"><div class="muted">已关闭</div><div class="value">${closedCount}</div></div>
+        <div class="stat"><div class="muted">近 1 日活跃用户</div><div class="value">${Number(presence.active1d ?? 0)}</div></div>
+        <div class="stat"><div class="muted">近 3 日活跃用户</div><div class="value">${Number(presence.active3d ?? 0)}</div></div>
+        <div class="stat"><div class="muted">近 7 日活跃用户</div><div class="value">${Number(presence.active7d ?? 0)}</div></div>
+        <div class="stat"><div class="muted">累计用户</div><div class="value">${Number(presence.total ?? 0)}</div></div>
       </div>
     </div>
 
