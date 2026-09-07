@@ -432,13 +432,29 @@ function adminNav(active) {
   return `<div class="nav">${links.map(([path, label]) => `<a class="${active === (path || 'dashboard') ? 'active' : ''}" href="/admin${path ? `/${path}` : ''}">${label}</a>`).join('')}<a style="margin-left:auto" href="/admin/logout">退出</a></div>`;
 }
 
-function renderDashboard({ state, feedbackItems, announcementItems, presence = {}, message = '' }) {
+function renderDashboard({
+  state,
+  feedbackItems,
+  announcementItems,
+  presence = {},
+  webVpnStatus = {},
+  message = ''
+}) {
   const meta = state.meta;
   const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
   const openCount = feedbackItems.filter((item) => item.status === 'open').length;
   const repliedCount = feedbackItems.filter((item) => item.status === 'replied').length;
   const closedCount = feedbackItems.filter((item) => item.status === 'closed').length;
   const latestFeedback = feedbackItems.slice(0, 6);
+  const webVpnPresentation = {
+    available: { label: '正常', badge: 'ok' },
+    degraded: { label: '可能不稳定', badge: 'warn' },
+    unavailable: { label: '不可用', badge: 'bad' },
+    unknown: { label: '状态未知', badge: 'warn' }
+  }[webVpnStatus.status] ?? { label: '状态未知', badge: 'warn' };
+  const webVpnCheckedAt = webVpnStatus.checkedAt
+    ? formatDateTime(webVpnStatus.checkedAt)
+    : '尚未检查';
 
   return shell(
     'Lehu 后台',
@@ -452,6 +468,15 @@ function renderDashboard({ state, feedbackItems, announcementItems, presence = {
       </div>
     </div>
     ${notice}
+    <div class="card">
+      <div class="row" style="justify-content: space-between; align-items: center;">
+        <div>
+          <div class="muted">WebVPN 服务状态</div>
+          <div style="margin-top: 8px;">最近检查：${escapeHtml(webVpnCheckedAt)}</div>
+        </div>
+        <span class="badge ${webVpnPresentation.badge}">${webVpnPresentation.label}</span>
+      </div>
+    </div>
     <div class="stats-card">
       <div class="stats">
         <div class="stat"><div class="muted">近 1 日活跃用户</div><div class="value">${Number(presence.active1d ?? 0)}</div></div>

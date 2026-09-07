@@ -14,6 +14,10 @@ import {
 import { createRateLimit } from './rateLimit.js';
 import { hashToken, makeId, mutateState, nowIso, readState } from './store.js';
 import {
+  initializeWebVpnMonitor,
+  publicWebVpnStatus
+} from './webvpnMonitor.js';
+import {
   renderAnnouncementListPage,
   renderDashboard,
   renderFeedbackDetail,
@@ -260,6 +264,18 @@ app.get('/api/v1/announcements/latest', async (req, res, next) => {
   }
 });
 
+app.get('/api/v1/service-status/webvpn', (req, res) => {
+  sendCachedJson(
+    req,
+    res,
+    {
+      success: true,
+      data: publicWebVpnStatus()
+    },
+    30
+  );
+});
+
 app.get('/api/v1/bootstrap', async (req, res, next) => {
   try {
     const state = await readState();
@@ -270,10 +286,11 @@ app.get('/api/v1/bootstrap', async (req, res, next) => {
         success: true,
         data: {
           version: publicVersionPayload(state).data,
-          latestAnnouncement: publicAnnouncement(selectLatestAnnouncement(state.announcements))
+          latestAnnouncement: publicAnnouncement(selectLatestAnnouncement(state.announcements)),
+          webVpnStatus: publicWebVpnStatus()
         }
       },
-      120
+      30
     );
   } catch (error) {
     next(error);
@@ -465,6 +482,7 @@ app.get('/admin', requireAdmin, async (req, res, next) => {
         feedbackItems,
         announcementItems,
         presence,
+        webVpnStatus: publicWebVpnStatus(),
         message: trimText(req.query.message ?? '')
       })
     );
@@ -775,6 +793,8 @@ app.use((error, req, res, next) => {
 
   res.status(500).type('text').send(message);
 });
+
+await initializeWebVpnMonitor();
 
 app.listen(port, '0.0.0.0', () => {
   console.log(`Lehu update feedback server listening on ${port}`);
