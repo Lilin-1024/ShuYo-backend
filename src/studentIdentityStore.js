@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { maskedStudentId } from './identityProbe.js';
 
 const SESSION_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
+const MAX_ACTIVE_SESSIONS = 10;
 
 function decodeSecret(value, name) {
   if (typeof value !== 'string' || !/^[0-9a-f]{64}$/i.test(value)) {
@@ -148,6 +149,16 @@ class StudentIdentityStore {
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(sessionId, account.id, tokenHash(token), label, issuedAt, issuedAt, expiresAt);
       this.audit(account.id, 'session_created', sessionId, issuedAt);
+      const overflow = this.db.prepare(`
+        SELECT id FROM student_sessions
+        WHERE account_id = ? AND revoked_at IS NULL AND expires_at > ?
+        ORDER BY rowid DESC LIMIT -1 OFFSET ?
+      `).all(account.id, issuedAt, MAX_ACTIVE_SESSIONS);
+      for (const row of overflow) {
+        this.db.prepare('UPDATE student_sessions SET revoked_at = ? WHERE id = ?')
+          .run(issuedAt, row.id);
+        this.audit(account.id, 'session_limit_revoked', row.id, issuedAt);
+      }
       return {
         accountId: account.id,
         sessionId,
@@ -229,4 +240,4 @@ class StudentIdentityStore {
   }
 }
 
-export { SESSION_LIFETIME_MS, StudentIdentityStore };
+export { MAX_ACTIVE_SESSIONS, SESSION_LIFETIME_MS, StudentIdentityStore };

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { SESSION_LIFETIME_MS, StudentIdentityStore } from '../src/studentIdentityStore.js';
+import { MAX_ACTIVE_SESSIONS, SESSION_LIFETIME_MS, StudentIdentityStore } from '../src/studentIdentityStore.js';
 
 function createStore() {
   return new StudentIdentityStore({
@@ -103,6 +103,21 @@ test('deleting an account removes its student ID and every device session', () =
     assert.equal(store.getSession(first.token), null);
     assert.equal(store.getSession(second.token), null);
     assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM student_audit').get().n, 0);
+  } finally {
+    store.close();
+  }
+});
+
+test('per-student active device sessions are capped', () => {
+  const store = createStore();
+  try {
+    const now = new Date('2026-10-07T08:00:00Z');
+    const sessions = Array.from({ length: MAX_ACTIVE_SESSIONS + 1 }, () =>
+      store.createSession({ studentId: '23123456', now }));
+    assert.equal(store.listSessions(sessions[0].accountId, now).length,
+      MAX_ACTIVE_SESSIONS);
+    assert.equal(store.getSession(sessions[0].token, now), null);
+    assert.notEqual(store.getSession(sessions.at(-1).token, now), null);
   } finally {
     store.close();
   }
