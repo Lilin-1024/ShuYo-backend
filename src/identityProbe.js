@@ -52,11 +52,8 @@ async function readStudentId(response) {
   return { status: 'no_student_id' };
 }
 
-async function probeSchoolIdentity({ cookieHeader, expectedStudentId, fetchImpl = fetch }) {
+async function fetchSchoolStudentId({ cookieHeader, fetchImpl = fetch }) {
   if (!validCookieHeader(cookieHeader)) return { status: 'invalid_cookie' };
-  if (typeof expectedStudentId !== 'string' || !/^[A-Za-z0-9]{6,24}$/.test(expectedStudentId)) {
-    return { status: 'invalid_student_id' };
-  }
 
   try {
     const response = await fetchImpl(ACADEMIC_IDENTITY_URL, {
@@ -77,16 +74,31 @@ async function probeSchoolIdentity({ cookieHeader, expectedStudentId, fetchImpl 
 
     const identity = await readStudentId(response);
     if (identity.status !== 'verified') return { status: identity.status };
-    const studentId = identity.studentId;
-    return {
-      status: 'verified',
-      matchesLocal: studentId.toLowerCase() === expectedStudentId.toLowerCase(),
-      maskedStudentId: maskedStudentId(studentId)
-    };
+    return identity;
   } catch {
     // School cookies and the upstream response must never reach error logs.
     return { status: 'network_error' };
   }
 }
 
-export { ACADEMIC_IDENTITY_URL, parseStudentId, probeSchoolIdentity, validCookieHeader };
+async function probeSchoolIdentity({ cookieHeader, expectedStudentId, fetchImpl = fetch }) {
+  if (typeof expectedStudentId !== 'string' || !/^[A-Za-z0-9]{6,24}$/.test(expectedStudentId)) {
+    return { status: 'invalid_student_id' };
+  }
+  const identity = await fetchSchoolStudentId({ cookieHeader, fetchImpl });
+  if (identity.status !== 'verified') return identity;
+  return {
+    status: 'verified',
+    matchesLocal: identity.studentId.toLowerCase() === expectedStudentId.toLowerCase(),
+    maskedStudentId: maskedStudentId(identity.studentId)
+  };
+}
+
+export {
+  ACADEMIC_IDENTITY_URL,
+  fetchSchoolStudentId,
+  maskedStudentId,
+  parseStudentId,
+  probeSchoolIdentity,
+  validCookieHeader
+};

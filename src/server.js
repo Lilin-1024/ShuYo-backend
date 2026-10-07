@@ -12,8 +12,9 @@ import {
   validateAdminPassword
 } from './auth.js';
 import { createRateLimit } from './rateLimit.js';
-import { probeSchoolIdentity } from './identityProbe.js';
-import { hashToken, makeId, mutateState, nowIso, readState } from './store.js';
+import { fetchSchoolStudentId, maskedStudentId, probeSchoolIdentity } from './identityProbe.js';
+import { StudentIdentityStore } from './studentIdentityStore.js';
+import { dataDir, hashToken, makeId, mutateState, nowIso, readState } from './store.js';
 import {
   initializeWebVpnMonitor,
   publicWebVpnStatus
@@ -36,8 +37,15 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
+process.umask(0o077);
+
 const app = express();
 const port = Number.parseInt(process.env.PORT ?? '3000', 10) || 3000;
+const studentIdentityStore = new StudentIdentityStore({
+  filename: `${dataDir}/accounts.sqlite`,
+  hmacSecret: process.env.STUDENT_ID_HMAC_SECRET,
+  encryptionKey: process.env.STUDENT_ID_ENCRYPTION_KEY
+});
 
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
@@ -70,7 +78,8 @@ app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 // Body-parser errors may contain the raw request body. Never print a school
 // session value, even when a malformed probe request cannot reach its route.
 app.use((error, req, res, next) => {
-  if (req.path !== '/api/v1/identity/probe') return next(error);
+  if (req.path !== '/api/v1/identity/probe' &&
+      !req.path.startsWith('/api/v1/student/')) return next(error);
   res.setHeader('Cache-Control', 'no-store');
   res.status(400).json({ success: false, error: '请求格式无效。' });
 });
@@ -98,6 +107,28 @@ const identityProbeRateLimit = createRateLimit({
   max: 6,
   message: '测试请求过于频繁，请稍后再试。'
 });
+
+const studentEnrollmentRateLimit = createRateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 6,
+  message: '身份核验过于频繁，请稍后再试。'
+});
+
+function studentToken(req) {
+  const match = /^Bearer ([A-Za-z0-9_-]{43})$/i.exec(req.get('authorization') ?? '');
+  return match?.[1] ?? null;
+}
+
+function requireStudentSession(req, res, next) {
+  const session = studentIdentityStore.getSession(studentToken(req));
+  if (!session) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(401).json({ success: false, error: 'ShuYo 身份已失效，请重新核验。' });
+    return;
+  }
+  req.studentSession = session;
+  next();
+}
 
 function identityProbeAvailable() {
   const expiresAt = Date.parse(process.env.IDENTITY_PROBE_EXPIRES_AT ?? '');
@@ -289,6 +320,65 @@ app.post('/api/v1/identity/probe', identityProbeRateLimit, async (req, res) => {
     expectedStudentId: req.body?.expectedStudentId
   });
   res.status(200).json({ success: true, data: result });
+});
+
+app.post('/api/v1/student/sessions', studentEnrollmentRateLimit, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const expectedStudentId = String(req.body?.expectedStudentId ?? '').trim().toUpperCase();
+  if (!/^[A-Z0-9]{6,24}$/.test(expectedStudentId)) {
+    res.status(400).json({ success: false, error: '本机学号无效。' });
+    return;
+  }
+  const identity = await fetchSchoolStudentId({ cookieHeader: req.body?.schoolCookie });
+  if (identity.status !== 'verified') {
+    const code = {
+      invalid_cookie: 400,
+      session_expired: 401,
+      school_rejected: 403,
+      no_student_id: 422
+    }[identity.status] ?? 503;
+    res.status(code).json({ success: false, code: identity.status,
+      error: '暂时无法通过学校核实学号。' });
+    return;
+  }
+  if (identity.studentId.toUpperCase() !== expectedStudentId) {
+    res.status(409).json({ success: false, code: 'student_mismatch',
+      data: { maskedStudentId: maskedStudentId(identity.studentId) },
+      error: '学校返回的学号与本机账户不一致。' });
+    return;
+  }
+  const session = studentIdentityStore.createSession({
+    studentId: identity.studentId,
+    deviceLabel: req.body?.deviceLabel,
+    previousToken: studentToken(req)
+  });
+  res.status(201).json({ success: true, data: session });
+});
+
+app.get('/api/v1/student/session', requireStudentSession, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const session = req.studentSession;
+  res.json({ success: true, data: {
+    accountId: session.account_id,
+    sessionId: session.id,
+    maskedStudentId: session.student_id_masked,
+    expiresAt: session.expires_at
+  } });
+});
+
+app.get('/api/v1/student/sessions', requireStudentSession, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, data: studentIdentityStore.listSessions(req.studentSession.account_id) });
+});
+
+app.delete('/api/v1/student/session', requireStudentSession, (req, res) => {
+  studentIdentityStore.revokeSession(studentToken(req));
+  res.status(204).end();
+});
+
+app.post('/api/v1/student/sessions/revoke-all', requireStudentSession, (req, res) => {
+  studentIdentityStore.revokeAllSessions(req.studentSession.account_id);
+  res.status(204).end();
 });
 
 app.get('/api/v1/version', async (req, res, next) => {
