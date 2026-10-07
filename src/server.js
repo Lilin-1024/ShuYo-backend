@@ -12,6 +12,7 @@ import {
   validateAdminPassword
 } from './auth.js';
 import { createRateLimit } from './rateLimit.js';
+import { probeSchoolIdentity } from './identityProbe.js';
 import { hashToken, makeId, mutateState, nowIso, readState } from './store.js';
 import {
   initializeWebVpnMonitor,
@@ -66,6 +67,13 @@ app.use(
 app.use(cookieParser(process.env.COOKIE_SECRET ?? 'change-this-cookie-secret'));
 app.use(express.json({ limit: '64kb' }));
 app.use(express.urlencoded({ extended: false, limit: '64kb' }));
+// Body-parser errors may contain the raw request body. Never print a school
+// session value, even when a malformed probe request cannot reach its route.
+app.use((error, req, res, next) => {
+  if (req.path !== '/api/v1/identity/probe') return next(error);
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(400).json({ success: false, error: '请求格式无效。' });
+});
 
 const feedbackRateLimit = createRateLimit({
   windowMs: 10 * 60 * 1000,
@@ -84,6 +92,26 @@ const loginRateLimit = createRateLimit({
   max: 10,
   message: '登录尝试过于频繁，请稍后再试。'
 });
+
+const identityProbeRateLimit = createRateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 6,
+  message: '测试请求过于频繁，请稍后再试。'
+});
+
+function identityProbeAvailable() {
+  const expiresAt = Date.parse(process.env.IDENTITY_PROBE_EXPIRES_AT ?? '');
+  return process.env.IDENTITY_PROBE_ENABLED === 'true' &&
+    Number.isFinite(expiresAt) &&
+    Date.now() < expiresAt &&
+    Boolean(process.env.IDENTITY_PROBE_KEY);
+}
+
+function validIdentityProbeKey(value) {
+  const expected = process.env.IDENTITY_PROBE_KEY ?? '';
+  if (typeof value !== 'string' || !expected || value.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(value), Buffer.from(expected));
+}
 
 function jsonEtag(value) {
   return `"${crypto.createHash('sha1').update(JSON.stringify(value)).digest('hex')}"`;
@@ -244,6 +272,23 @@ app.get('/health', (req, res) => {
     service: 'lehu-update-feedback-server',
     time: nowIso()
   });
+});
+
+app.post('/api/v1/identity/probe', identityProbeRateLimit, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!identityProbeAvailable()) {
+    res.status(404).json({ success: false, error: '测试已关闭。' });
+    return;
+  }
+  if (!validIdentityProbeKey(req.get('x-identity-probe-key'))) {
+    res.status(403).json({ success: false, error: '测试访问码无效。' });
+    return;
+  }
+  const result = await probeSchoolIdentity({
+    cookieHeader: req.body?.schoolCookie,
+    expectedStudentId: req.body?.expectedStudentId
+  });
+  res.status(200).json({ success: true, data: result });
 });
 
 app.get('/api/v1/version', async (req, res, next) => {
