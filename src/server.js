@@ -5,12 +5,9 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 
 import {
-  clearAdminSession,
-  isAdminAuthenticated,
-  registerAdminSession,
-  requireAdmin,
-  validateAdminPassword
+  createAdminAuth
 } from './auth.js';
+import { AdminStore } from './adminStore.js';
 import { createRateLimit } from './rateLimit.js';
 import { fetchSchoolStudentId, maskedStudentId } from './identityProbe.js';
 import { StudentIdentityStore } from './studentIdentityStore.js';
@@ -20,16 +17,21 @@ import {
   publicWebVpnStatus
 } from './webvpnMonitor.js';
 import {
+  renderAccountPage,
+  renderAdminListPage,
+  renderAuditPage,
   renderAnnouncementListPage,
   renderDashboard,
   renderFeedbackDetail,
   renderFeedbackListPage,
   renderVersionPage,
-  renderLoginPage
+  renderLoginPage,
+  renderStudentListPage,
+  renderStudentRevealPage
 } from './views.js';
 
 if (process.env.NODE_ENV === 'production') {
-  for (const name of ['ADMIN_PASSWORD', 'COOKIE_SECRET', 'PRESENCE_HMAC_SECRET']) {
+  for (const name of ['COOKIE_SECRET', 'PRESENCE_HMAC_SECRET']) {
     const value = process.env[name]?.trim();
     if (!value || value === 'change-me' || value.startsWith('change-this-')) {
       throw new Error(`${name} must be configured before starting in production`);
@@ -41,6 +43,11 @@ process.umask(0o077);
 
 const app = express();
 const port = Number.parseInt(process.env.PORT ?? '3000', 10) || 3000;
+const adminStore = new AdminStore({ filename: dataDir + '/admins.sqlite' });
+const {
+  currentAdmin, requireAdmin, requireSuperadmin, requireCsrf,
+  createLoginCsrf, checkLoginCsrf, clearLoginCsrf, registerSession, clearSession
+} = createAdminAuth(adminStore);
 const studentIdentityStore = new StudentIdentityStore({
   filename: `${dataDir}/accounts.sqlite`,
   hmacSecret: process.env.STUDENT_ID_HMAC_SECRET,
@@ -49,7 +56,20 @@ const studentIdentityStore = new StudentIdentityStore({
 
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'none'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      baseUri: ["'none'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"]
+    }
+  }
+}));
 morgan.token('safe-url', (req) => {
   const originalUrl = req.originalUrl ?? req.url ?? '';
   try {
@@ -78,8 +98,12 @@ app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 // Body-parser errors may contain the raw request body. Never print a school
 // session value, even when a malformed identity request cannot reach its route.
 app.use((error, req, res, next) => {
-  if (!req.path.startsWith('/api/v1/student/')) return next(error);
+  if (!req.path.startsWith('/api/v1/student/') && !req.path.startsWith('/admin')) return next(error);
   res.setHeader('Cache-Control', 'no-store');
+  if (req.path.startsWith('/admin')) {
+    res.status(400).type('text').send('请求格式无效。');
+    return;
+  }
   res.status(400).json({ success: false, error: '请求格式无效。' });
 });
 
@@ -547,37 +571,157 @@ app.get('/api/v1/feedback/:id', async (req, res, next) => {
   }
 });
 
+app.use('/admin', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (req.method === 'POST' && req.path !== '/login') {
+    requireAdmin(req, res, () => requireCsrf(req, res, next));
+    return;
+  }
+  next();
+});
+
 app.get('/admin/login', (req, res) => {
-  if (isAdminAuthenticated(req)) {
+  if (currentAdmin(req)) {
     res.redirect('/admin');
     return;
   }
-
-  res.status(200).send(renderLoginPage());
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(200).send(renderLoginPage({ csrfToken: createLoginCsrf(res) }));
 });
 
 app.post('/admin/login', loginRateLimit, async (req, res) => {
-  const password = trimText(req.body.password ?? '');
-
-  if (!validateAdminPassword(password)) {
-    res.status(401).send(renderLoginPage({ errorMessage: '密码错误，请重试。' }));
+  res.setHeader('Cache-Control', 'no-store');
+  if (!checkLoginCsrf(req)) {
+    res.status(403).send(renderLoginPage({
+      errorMessage: '页面已过期，请刷新后重试。',
+      csrfToken: createLoginCsrf(res)
+    }));
+    return;
+  }
+  const username = trimText(req.body.username ?? '');
+  const password = String(req.body.password ?? '');
+  const admin = adminStore.authenticate(username, password);
+  if (!admin) {
+    res.status(401).send(renderLoginPage({
+      errorMessage: '登录名或密码错误。',
+      csrfToken: createLoginCsrf(res)
+    }));
     return;
   }
 
-  registerAdminSession(res);
+  clearLoginCsrf(res);
+  registerSession(res, admin.id);
   res.redirect('/admin');
 });
 
-app.post('/admin/logout', (req, res) => {
-  const token = req.cookies?.lehu_admin_session;
-  clearAdminSession(res, token);
+app.post('/admin/logout', requireAdmin, requireCsrf, (req, res) => {
+  clearSession(req, res);
   res.redirect('/admin/login');
 });
 
 app.get('/admin/logout', (req, res) => {
-  const token = req.cookies?.lehu_admin_session;
-  clearAdminSession(res, token);
-  res.redirect('/admin/login');
+  res.redirect('/admin');
+});
+
+app.get('/admin/account', requireAdmin, (req, res) => {
+  res.send(renderAccountPage({
+    admin: req.admin, csrfToken: res.locals.csrfToken,
+    message: trimText(req.query.message ?? '')
+  }));
+});
+
+app.post('/admin/account/password', requireAdmin, (req, res) => {
+  try {
+    adminStore.changeOwnPassword(req.admin.id, req.body.currentPassword, req.body.newPassword);
+    res.clearCookie('shuyo_admin_session', { path: '/admin' });
+    res.redirect('/admin/login');
+  } catch (error) {
+    res.status(400).send(renderAccountPage({
+      admin: req.admin, csrfToken: res.locals.csrfToken,
+      message: error.message
+    }));
+  }
+});
+
+app.get('/admin/admins', requireAdmin, requireSuperadmin, (req, res) => {
+  res.send(renderAdminListPage({
+    admins: adminStore.listAdmins(), admin: req.admin,
+    csrfToken: res.locals.csrfToken, message: trimText(req.query.message ?? '')
+  }));
+});
+
+app.post('/admin/admins', requireAdmin, requireSuperadmin, (req, res) => {
+  try {
+    adminStore.createAdmin(req.admin.id, req.body.username, req.body.password, req.body.role);
+    res.redirect('/admin/admins?message=' + encodeURIComponent('管理员已创建。'));
+  } catch (error) {
+    res.status(400).send(renderAdminListPage({
+      admins: adminStore.listAdmins(), admin: req.admin,
+      csrfToken: res.locals.csrfToken, message: error.message
+    }));
+  }
+});
+
+app.post('/admin/admins/:id/update', requireAdmin, requireSuperadmin, (req, res) => {
+  try {
+    adminStore.updateAdmin(req.admin.id, req.params.id, {
+      role: req.body.role, active: req.body.active === 'true'
+    });
+    res.redirect('/admin/admins?message=' + encodeURIComponent('管理员设置已保存。'));
+  } catch (error) {
+    res.status(400).send(renderAdminListPage({
+      admins: adminStore.listAdmins(), admin: req.admin,
+      csrfToken: res.locals.csrfToken, message: error.message
+    }));
+  }
+});
+
+app.post('/admin/admins/:id/password', requireAdmin, requireSuperadmin, (req, res) => {
+  try {
+    adminStore.resetPassword(req.admin.id, req.params.id, req.body.password);
+    res.redirect('/admin/admins?message=' + encodeURIComponent('密码已重设，旧会话已退出。'));
+  } catch (error) {
+    res.status(400).send(renderAdminListPage({
+      admins: adminStore.listAdmins(), admin: req.admin,
+      csrfToken: res.locals.csrfToken, message: error.message
+    }));
+  }
+});
+
+app.get('/admin/students', requireAdmin, requireSuperadmin, (req, res) => {
+  const accountId = trimText(req.query.accountId ?? '');
+  const account = accountId ? studentIdentityStore.getAccount(accountId) : null;
+  res.send(renderStudentListPage({
+    accounts: accountId ? (account ? [account] : []) : studentIdentityStore.listAccounts(),
+    accountId,
+    admin: req.admin, csrfToken: res.locals.csrfToken
+  }));
+});
+
+app.post('/admin/students/:id/reveal', requireAdmin, requireSuperadmin, (req, res) => {
+  const reasons = new Set(['feedback', 'appeal', 'security']);
+  const reason = trimText(req.body.reason);
+  if (!reasons.has(reason)) {
+    res.status(400).send('请选择查看原因。');
+    return;
+  }
+  const account = studentIdentityStore.getAccount(req.params.id);
+  if (!account) {
+    res.status(404).send('学生账户不存在。');
+    return;
+  }
+  const studentId = studentIdentityStore.getStudentId(account.id);
+  adminStore.audit(req.admin.id, 'student_id.reveal', 'student_account', account.id, reason);
+  res.send(renderStudentRevealPage({
+    account, studentId, admin: req.admin, csrfToken: res.locals.csrfToken
+  }));
+});
+
+app.get('/admin/audit', requireAdmin, requireSuperadmin, (req, res) => {
+  res.send(renderAuditPage({
+    entries: adminStore.listAudit(), admin: req.admin,
+    csrfToken: res.locals.csrfToken
+  }));
 });
 
 app.get('/admin', requireAdmin, async (req, res, next) => {
@@ -594,7 +738,9 @@ app.get('/admin', requireAdmin, async (req, res, next) => {
         announcementItems,
         presence,
         webVpnStatus: publicWebVpnStatus(),
-        message: trimText(req.query.message ?? '')
+        message: trimText(req.query.message ?? ''),
+        csrfToken: res.locals.csrfToken,
+        admin: req.admin
       })
     );
   } catch (error) {
@@ -607,7 +753,9 @@ app.get('/admin/version', requireAdmin, async (req, res, next) => {
     const state = await readState();
     res.status(200).send(renderVersionPage({
       state,
-      message: trimText(req.query.message ?? '')
+      message: trimText(req.query.message ?? ''),
+      csrfToken: res.locals.csrfToken,
+      admin: req.admin
     }));
   } catch (error) {
     next(error);
@@ -623,7 +771,9 @@ app.get('/admin/feedback', requireAdmin, async (req, res, next) => {
       renderFeedbackListPage({
         state,
         feedbackItems,
-        message: trimText(req.query.message ?? '')
+        message: trimText(req.query.message ?? ''),
+        csrfToken: res.locals.csrfToken,
+        admin: req.admin
       })
     );
   } catch (error) {
@@ -640,7 +790,9 @@ app.get('/admin/announcements', requireAdmin, async (req, res, next) => {
       renderAnnouncementListPage({
         state,
         announcementItems,
-        message: trimText(req.query.message ?? '')
+        message: trimText(req.query.message ?? ''),
+        csrfToken: res.locals.csrfToken,
+        admin: req.admin
       })
     );
   } catch (error) {
@@ -680,6 +832,7 @@ app.post('/admin/version', requireAdmin, async (req, res, next) => {
       state.meta.noticeText = noticeText;
       state.meta.publishedAt = nowIso();
     });
+    adminStore.audit(req.admin.id, 'version.update', 'version', 'current');
 
     res.redirect('/admin/version?message=' + encodeURIComponent('版本设置已保存。'));
   } catch (error) {
@@ -701,6 +854,7 @@ app.post('/admin/announcements', requireAdmin, async (req, res, next) => {
 
     validateLength(title, 160, '标题');
     validateLength(content, 4000, '内容');
+    const announcementId = makeId('ann');
 
     await mutateState((state) => {
       if (active) {
@@ -711,7 +865,7 @@ app.post('/admin/announcements', requireAdmin, async (req, res, next) => {
       }
 
       state.announcements.unshift({
-        id: makeId('ann'),
+        id: announcementId,
         title,
         content,
         active,
@@ -719,6 +873,8 @@ app.post('/admin/announcements', requireAdmin, async (req, res, next) => {
         updatedAt: nowIso()
       });
     });
+    adminStore.audit(req.admin.id, 'announcement.create', 'announcement', announcementId,
+      active ? 'active' : 'inactive');
 
     adminRedirectWithMessage(res, returnTo, '公告已发布。');
   } catch (error) {
@@ -758,6 +914,8 @@ app.post('/admin/announcements/:id/active', requireAdmin, async (req, res, next)
       res.status(404).send('未找到公告。');
       return;
     }
+    adminStore.audit(req.admin.id, 'announcement.visibility', 'announcement', announcementId,
+      active ? 'active' : 'inactive');
 
     adminRedirectWithMessage(res, returnTo, active ? '公告已启用。' : '公告已关闭。');
   } catch (error) {
@@ -797,6 +955,8 @@ app.post('/admin/feedback/device-block', requireAdmin, async (req, res, next) =>
         (item) => item.deviceId !== deviceId
       );
     });
+    adminStore.audit(req.admin.id, 'feedback.device_block', 'feedback_device',
+      hashToken(deviceId).slice(0, 16), blocked ? 'blocked' : 'unblocked');
 
     adminRedirectWithMessage(
       res,
@@ -821,7 +981,9 @@ app.get('/admin/feedback/:id', requireAdmin, async (req, res, next) => {
     res.status(200).send(
       renderFeedbackDetail({
         state,
-        item
+        item,
+        csrfToken: res.locals.csrfToken,
+        admin: req.admin
       })
     );
   } catch (error) {
@@ -853,7 +1015,8 @@ app.post('/admin/feedback/:id/reply', requireAdmin, async (req, res, next) => {
       item.replies = Array.isArray(item.replies) ? item.replies : [];
       item.replies.push({
         id: makeId('rp'),
-        author: 'admin',
+        author: req.admin.username,
+        authorId: req.admin.id,
         message,
         createdAt: now
       });
@@ -867,6 +1030,8 @@ app.post('/admin/feedback/:id/reply', requireAdmin, async (req, res, next) => {
       res.status(404).send('未找到反馈。');
       return;
     }
+    adminStore.audit(req.admin.id, 'feedback.reply', 'feedback', feedbackId,
+      ['open', 'closed'].includes(status) ? status : 'replied');
 
     res.redirect(`/admin/feedback/${encodeURIComponent(feedbackId)}`);
   } catch (error) {
@@ -875,7 +1040,7 @@ app.post('/admin/feedback/:id/reply', requireAdmin, async (req, res, next) => {
 });
 
 app.get('/', (req, res) => {
-  res.type('text').send('Lehu update feedback server is running.');
+  res.type('text').send('ShuYo API is running.');
 });
 
 app.use((req, res) => {
@@ -892,6 +1057,12 @@ app.use((req, res) => {
 
 app.use((error, req, res, next) => {
   const message = error instanceof Error ? error.message : 'Internal Server Error';
+  if (req.path.startsWith('/admin')) {
+    console.error('[admin]', error?.name ?? 'Error', error?.code ?? '');
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(500).type('text').send('后台操作失败，请稍后重试。');
+    return;
+  }
   console.error(error);
 
   if (req.path.startsWith('/api/')) {
@@ -905,8 +1076,11 @@ app.use((error, req, res, next) => {
   res.status(500).type('text').send(message);
 });
 
-await initializeWebVpnMonitor();
+if (process.env.NODE_ENV !== 'test') {
+  await initializeWebVpnMonitor();
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`Lehu update feedback server listening on ${port}`);
+  });
+}
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Lehu update feedback server listening on ${port}`);
-});
+export { app, adminStore, studentIdentityStore };

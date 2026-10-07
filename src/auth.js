@@ -1,112 +1,90 @@
 import crypto from 'node:crypto';
 
-const sessions = new Map();
-
-function sessionTtlMs() {
-  const hours = Number.parseInt(process.env.SESSION_TTL_HOURS ?? '168', 10);
-  const safeHours = Number.isFinite(hours) && hours > 0 ? hours : 168;
-  return safeHours * 60 * 60 * 1000;
-}
+const SESSION_COOKIE = 'shuyo_admin_session';
+const LOGIN_CSRF_COOKIE = 'shuyo_admin_login_csrf';
 
 function cookieSecure() {
   const value = String(process.env.COOKIE_SECURE ?? '').toLowerCase();
   return value === '1' || value === 'true';
 }
 
-function getAdminPassword() {
-  return process.env.ADMIN_PASSWORD ?? 'change-this-password';
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const first = Buffer.from(a);
+  const second = Buffer.from(b);
+  return first.length === second.length && crypto.timingSafeEqual(first, second);
 }
 
-function createSessionToken() {
-  return crypto.randomBytes(32).toString('hex');
-}
-
-function validateAdminPassword(password) {
-  return String(password ?? '') === getAdminPassword();
-}
-
-function registerAdminSession(res) {
-  const token = createSessionToken();
-  sessions.set(token, {
-    expiresAt: Date.now() + sessionTtlMs()
-  });
-
-  res.cookie('lehu_admin_session', token, {
-    signed: true,
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: cookieSecure(),
-    maxAge: sessionTtlMs(),
-    path: '/'
-  });
-
-  return token;
-}
-
-function clearAdminSession(res, token) {
-  if (token) {
-    sessions.delete(token);
+function createAdminAuth(store) {
+  function sessionToken(req) {
+    return req.signedCookies?.[SESSION_COOKIE] ?? null;
   }
 
-  res.clearCookie('lehu_admin_session', { path: '/' });
-}
-
-function getSessionToken(req) {
-  return req.signedCookies?.lehu_admin_session ?? req.cookies?.lehu_admin_session;
-}
-
-function isAdminAuthenticated(req) {
-  const token = getSessionToken(req);
-  if (!token) {
-    return false;
+  function currentAdmin(req) {
+    return store.getSession(sessionToken(req));
   }
 
-  const session = sessions.get(token);
-  if (!session) {
-    return false;
-  }
-
-  if (session.expiresAt <= Date.now()) {
-    sessions.delete(token);
-    return false;
-  }
-
-  return true;
-}
-
-function requireAdmin(req, res, next) {
-  if (isAdminAuthenticated(req)) {
-    next();
-    return;
-  }
-
-  if (req.path.startsWith('/api/')) {
-    res.status(401).json({
-      success: false,
-      error: 'Unauthorized'
-    });
-    return;
-  }
-
-  res.redirect('/admin/login');
-}
-
-function cleanupSessions() {
-  const now = Date.now();
-  for (const [token, session] of sessions.entries()) {
-    if (session.expiresAt <= now) {
-      sessions.delete(token);
+  function requireAdmin(req, res, next) {
+    const admin = currentAdmin(req);
+    if (!admin) {
+      res.redirect('/admin/login');
+      return;
     }
+    req.admin = admin;
+    res.locals.csrfToken = admin.csrf_token;
+    next();
   }
+
+  function requireSuperadmin(req, res, next) {
+    if (req.admin?.role !== 'superadmin') {
+      res.status(403).send('没有权限。');
+      return;
+    }
+    next();
+  }
+
+  function requireCsrf(req, res, next) {
+    if (!safeEqual(req.body?._csrf, req.admin?.csrf_token)) {
+      res.status(403).send('页面已过期，请刷新后重试。');
+      return;
+    }
+    next();
+  }
+
+  function createLoginCsrf(res) {
+    const token = crypto.randomBytes(32).toString('base64url');
+    res.cookie(LOGIN_CSRF_COOKIE, token, {
+      signed: true, httpOnly: true, sameSite: 'lax', secure: cookieSecure(),
+      maxAge: 10 * 60 * 1000, path: '/admin'
+    });
+    return token;
+  }
+
+  function checkLoginCsrf(req) {
+    return safeEqual(req.body?._csrf, req.signedCookies?.[LOGIN_CSRF_COOKIE]);
+  }
+
+  function clearLoginCsrf(res) {
+    res.clearCookie(LOGIN_CSRF_COOKIE, { path: '/admin' });
+  }
+
+  function registerSession(res, adminId) {
+    const session = store.createSession(adminId);
+    res.cookie(SESSION_COOKIE, session.token, {
+      signed: true, httpOnly: true, sameSite: 'lax', secure: cookieSecure(),
+      maxAge: session.maxAge, path: '/admin'
+    });
+  }
+
+  function clearSession(req, res) {
+    store.revokeSession(sessionToken(req), req.admin?.id);
+    res.clearCookie(SESSION_COOKIE, { path: '/admin' });
+  }
+
+  return {
+    currentAdmin, requireAdmin, requireSuperadmin, requireCsrf,
+    createLoginCsrf, checkLoginCsrf, clearLoginCsrf, registerSession, clearSession
+  };
 }
 
-setInterval(cleanupSessions, 15 * 60 * 1000).unref();
-
-export {
-  clearAdminSession,
-  getSessionToken,
-  isAdminAuthenticated,
-  registerAdminSession,
-  requireAdmin,
-  validateAdminPassword
-};
+export { createAdminAuth };

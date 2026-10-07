@@ -23,7 +23,11 @@ function formatDateTime(value) {
   }).format(date);
 }
 
-function shell(title, body) {
+function shell(title, body, csrfToken = '') {
+  const pageBody = csrfToken
+    ? body.replace(/(<form\b[^>]*method="post"[^>]*>)/gi,
+      (form) => form + '<input type="hidden" name="_csrf" value="' + escapeHtml(csrfToken) + '" />')
+    : body;
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -237,9 +241,16 @@ function shell(title, body) {
       border-radius: 0;
       margin-bottom: 16px;
     }
-    .nav { display: flex; gap: 14px; margin-bottom: 16px; }
+    .nav { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 20px; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
     .nav a { color: #000; padding: 0; }
     .nav a.active { font-weight: 700; }
+    .nav-account { margin-left: auto; font-size: 13px; }
+    .nav form { margin: 0; }
+    .admin-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; border-bottom: 1px solid #ddd; padding: 14px 0; }
+    .admin-row form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .admin-row select, .admin-row input { width: auto; max-width: 240px; }
+    .admin-row .mono { font-size: 12px; }
+    .table-wrap { overflow-x: auto; }
     .stat .value { color: var(--accent); font-size: 28px; }
     .card, .stats-card { box-shadow: none; }
     @media (max-width: 900px) {
@@ -254,18 +265,20 @@ function shell(title, body) {
         border-bottom: 0;
       }
       .page { padding: 16px; }
+      .nav-account { margin-left: 0; }
+      .admin-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <div class="page">
-    ${body}
+    ${pageBody}
   </div>
 </body>
 </html>`;
 }
 
-function renderLoginPage({ errorMessage = '' } = {}) {
+function renderLoginPage({ errorMessage = '', csrfToken = '' } = {}) {
   const error = errorMessage
     ? `<div class="error">${escapeHtml(errorMessage)}</div>`
     : '';
@@ -277,13 +290,16 @@ function renderLoginPage({ errorMessage = '' } = {}) {
       <p class="subtitle">用于管理版本、公告和反馈回复。</p>
       ${error}
       <form method="post" action="/admin/login">
+        <label for="username">登录名</label>
+        <input id="username" name="username" type="text" autocomplete="username" required />
         <label for="password">管理员密码</label>
         <input id="password" name="password" type="password" autocomplete="current-password" required />
         <div style="margin-top: 16px;">
           <button type="submit">登录</button>
         </div>
       </form>
-    </div>`
+    </div>`,
+    csrfToken
   );
 }
 
@@ -427,9 +443,113 @@ function renderAnnouncementItems(announcementItems, returnTo) {
     .join('');
 }
 
-function adminNav(active) {
-  const links = [['', '仪表盘'], ['version', '版本'], ['announcements', '公告'], ['feedback', '反馈']];
-  return `<div class="nav">${links.map(([path, label]) => `<a class="${active === (path || 'dashboard') ? 'active' : ''}" href="/admin${path ? `/${path}` : ''}">${label}</a>`).join('')}<a style="margin-left:auto" href="/admin/logout">退出</a></div>`;
+function adminNav(active, admin) {
+  const links = [['', '仪表盘'], ['version', '版本'], ['announcements', '公告'], ['feedback', '反馈'], ['account', '我的账号']];
+  if (admin?.role === 'superadmin') links.push(['admins', '管理员'], ['students', '学生身份'], ['audit', '操作记录']);
+  return `<nav class="nav" aria-label="后台导航">${links.map(([route, label]) => `<a class="${active === (route || 'dashboard') ? 'active' : ''}" href="/admin${route ? `/${route}` : ''}">${label}</a>`).join('')}<span class="nav-account">${escapeHtml(admin?.username ?? '')}</span><form method="post" action="/admin/logout"><button type="submit">退出</button></form></nav>`;
+}
+
+function renderAccountPage({ admin, csrfToken, message = '' }) {
+  return shell('我的账号', `${adminNav('account', admin)}
+    <h1 class="title">我的账号</h1>
+    <p class="subtitle">${escapeHtml(admin.username)} · ${admin.role === 'superadmin' ? '总管理员' : '内容管理员'}</p>
+    ${message ? `<div class="notice">${escapeHtml(message)}</div>` : ''}
+    <form class="version-form" method="post" action="/admin/account/password">
+      <label>当前密码<input name="currentPassword" type="password" autocomplete="current-password" required /></label>
+      <label>新密码<input name="newPassword" type="password" autocomplete="new-password" minlength="12" required /></label>
+      <button type="submit">修改密码</button>
+    </form>`, csrfToken);
+}
+
+function renderAdminListPage({ admins, admin, csrfToken, message = '' }) {
+  const rows = admins.map((item) => `
+    <div class="admin-row">
+      <div><strong>${escapeHtml(item.username)}</strong>
+        <span class="badge ${item.active ? 'ok' : 'bad'}">${item.active ? '正常' : '已停用'}</span>
+        <div class="small mono">${escapeHtml(item.id)}</div></div>
+      <div>
+        <form method="post" action="/admin/admins/${encodeURIComponent(item.id)}/update">
+          <select name="role" aria-label="角色">
+            <option value="content"${item.role === 'content' ? ' selected' : ''}>内容管理员</option>
+            <option value="superadmin"${item.role === 'superadmin' ? ' selected' : ''}>总管理员</option>
+          </select>
+          <select name="active" aria-label="账号状态">
+            <option value="true"${item.active ? ' selected' : ''}>正常</option>
+            <option value="false"${item.active ? '' : ' selected'}>停用</option>
+          </select>
+          <button type="submit">保存</button>
+        </form>
+        <form method="post" action="/admin/admins/${encodeURIComponent(item.id)}/password">
+          <input name="password" type="password" minlength="12" autocomplete="new-password" placeholder="新密码" aria-label="新密码" required />
+          <button type="submit">重设密码</button>
+        </form>
+      </div>
+    </div>`).join('');
+  return shell('管理员', `${adminNav('admins', admin)}
+    <h1 class="title">管理员</h1>
+    ${message ? `<div class="notice">${escapeHtml(message)}</div>` : ''}
+    <div class="split" style="margin-top: 20px;">
+      <section class="card">
+        <h2>现有账号</h2>${rows || '<p>暂无账号。</p>'}
+      </section>
+      <section class="card">
+        <h2>添加管理员</h2>
+        <form class="version-form" method="post" action="/admin/admins">
+          <label>登录名<input name="username" type="text" pattern="[a-z][a-z0-9_-]{2,31}" required /></label>
+          <label>初始密码<input name="password" type="password" minlength="12" autocomplete="new-password" required /></label>
+          <label>权限<select name="role"><option value="content">内容管理员</option><option value="superadmin">总管理员</option></select></label>
+          <button type="submit">创建账号</button>
+        </form>
+      </section>
+    </div>`, csrfToken);
+}
+
+function renderStudentListPage({ accounts, accountId = '', admin, csrfToken }) {
+  const rows = accounts.map((item) => `
+    <div class="admin-row">
+      <div><strong>${escapeHtml(item.student_id_masked)}</strong>
+        <div class="small mono">${escapeHtml(item.id)}</div>
+        <div class="small">最近核验：${escapeHtml(formatDateTime(item.last_verified_at))}</div></div>
+      <form method="post" action="/admin/students/${encodeURIComponent(item.id)}/reveal">
+        <select name="reason" aria-label="查看原因" required>
+          <option value="feedback">反馈处理</option>
+          <option value="appeal">账号申诉</option>
+          <option value="security">安全排查</option>
+        </select>
+        <button type="submit">查看完整学号</button>
+      </form>
+    </div>`).join('');
+  return shell('学生身份', `${adminNav('students', admin)}
+    <h1 class="title">学生身份</h1>
+    <form method="get" action="/admin/students" class="row" style="margin: 18px 0;">
+      <input style="max-width: 360px;" name="accountId" aria-label="账户 ID" placeholder="按账户 ID 查找" value="${escapeHtml(accountId)}" />
+      <button type="submit">查找</button>
+    </form>
+    <div class="card">${rows || '<p>暂无已核验账户。</p>'}</div>`, csrfToken);
+}
+
+function renderStudentRevealPage({ account, studentId, admin, csrfToken }) {
+  return shell('完整学号', `${adminNav('students', admin)}
+    <h1 class="title">完整学号</h1>
+    <p class="mono">${escapeHtml(studentId)}</p>
+    <p class="small mono">账户 ${escapeHtml(account.id)}</p>
+    <a href="/admin/students">返回学生身份</a>`, csrfToken);
+}
+
+function renderAuditPage({ entries, admin, csrfToken }) {
+  const rows = entries.map((item) => `<tr>
+    <td>${escapeHtml(formatDateTime(item.occurred_at))}</td>
+    <td>${escapeHtml(item.actor_name || '-')}</td>
+    <td>${escapeHtml(item.action)}</td>
+    <td class="mono">${escapeHtml(item.target_id || '-')}</td>
+    <td>${escapeHtml(item.detail)}</td>
+  </tr>`).join('');
+  return shell('操作记录', `${adminNav('audit', admin)}
+    <h1 class="title">操作记录</h1>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>时间</th><th>操作者</th><th>动作</th><th>目标</th><th>说明</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`, csrfToken);
 }
 
 function renderDashboard({
@@ -438,7 +558,9 @@ function renderDashboard({
   announcementItems,
   presence = {},
   webVpnStatus = {},
-  message = ''
+  message = '',
+  csrfToken = '',
+  admin
 }) {
   const meta = state.meta;
   const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
@@ -457,8 +579,8 @@ function renderDashboard({
     : '尚未检查';
 
   return shell(
-    'Lehu 后台',
-    `<div class="nav"><a class="active" href="/admin">仪表盘</a><a href="/admin/version">版本</a><a href="/admin/announcements">公告</a><a href="/admin/feedback">反馈</a><a style="margin-left:auto" href="/admin/logout">退出</a></div>
+    'ShuYo 后台',
+    `${adminNav('dashboard', admin)}
     <div class="topbar">
       <div>
         <h1 class="title">${escapeHtml(meta.appName)} 后台</h1>
@@ -499,30 +621,29 @@ function renderDashboard({
         <div class="item-list">
           ${renderFeedbackItems(latestFeedback, state, '/admin')}
         </div>
-    </div>`
+    </div>`,
+    csrfToken
   );
 }
 
-function renderVersionPage({ state, message = '' }) {
+function renderVersionPage({ state, message = '', csrfToken = '', admin }) {
   const meta = state.meta;
   const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
-  return shell('版本设置', `<div class="nav"><a href="/admin">仪表盘</a><a class="active" href="/admin/version">版本</a><a href="/admin/announcements">公告</a><a href="/admin/feedback">反馈</a><a style="margin-left:auto" href="/admin/logout">退出</a></div>${notice}<div class="card"><h1 class="title">版本设置</h1><form class="version-form" method="post" action="/admin/version"><div class="grid"><div><label>应用名称</label><input name="appName" value="${escapeHtml(meta.appName)}" /></div><div><label>下载地址</label><input name="downloadUrl" value="${escapeHtml(meta.downloadUrl)}" /></div><div><label>最新版本号</label><input name="latestVersion" value="${escapeHtml(meta.latestVersion)}" required /></div><div><label>Build 号</label><input name="latestBuild" type="number" min="1" value="${escapeHtml(meta.latestBuild)}" required /></div><div><label>更新标题</label><input name="updateTitle" value="${escapeHtml(meta.updateTitle)}" /></div><div><label>强制更新</label><select name="forceUpdate"><option value="false"${meta.forceUpdate ? '' : ' selected'}>否</option><option value="true"${meta.forceUpdate ? ' selected' : ''}>是</option></select></div></div><label>更新说明</label><textarea name="updateMessage">${escapeHtml(meta.updateMessage)}</textarea><label>弹窗通告</label><textarea name="noticeText">${escapeHtml(meta.noticeText)}</textarea><button type="submit">保存</button></form></div>`);
+  return shell('版本设置', `${adminNav('version', admin)}${notice}<div class="card"><h1 class="title">版本设置</h1><form class="version-form" method="post" action="/admin/version"><div class="grid"><div><label>应用名称</label><input name="appName" value="${escapeHtml(meta.appName)}" /></div><div><label>下载地址</label><input name="downloadUrl" value="${escapeHtml(meta.downloadUrl)}" /></div><div><label>最新版本号</label><input name="latestVersion" value="${escapeHtml(meta.latestVersion)}" required /></div><div><label>Build 号</label><input name="latestBuild" type="number" min="1" value="${escapeHtml(meta.latestBuild)}" required /></div><div><label>更新标题</label><input name="updateTitle" value="${escapeHtml(meta.updateTitle)}" /></div><div><label>强制更新</label><select name="forceUpdate"><option value="false"${meta.forceUpdate ? '' : ' selected'}>否</option><option value="true"${meta.forceUpdate ? ' selected' : ''}>是</option></select></div></div><label>更新说明</label><textarea name="updateMessage">${escapeHtml(meta.updateMessage)}</textarea><label>弹窗通告</label><textarea name="noticeText">${escapeHtml(meta.noticeText)}</textarea><button type="submit">保存</button></form></div>`, csrfToken);
 }
 
-function renderFeedbackListPage({ state, feedbackItems, message = '' }) {
+function renderFeedbackListPage({ state, feedbackItems, message = '', csrfToken = '', admin }) {
   const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
   const openCount = feedbackItems.filter((item) => item.status === 'open').length;
 
   return shell(
     '反馈列表',
-    `${adminNav('feedback')}<div class="topbar">
+    `${adminNav('feedback', admin)}<div class="topbar">
       <div>
         <h1 class="title">反馈列表</h1>
         <div class="subtitle"><a href="/admin">返回后台</a> · 共 ${feedbackItems.length} 条，${openCount} 条待处理</div>
       </div>
-      <div class="row">
-        <a class="btn secondary" href="/admin/logout">退出登录</a>
-      </div>
+
     </div>
     ${notice}
     <div class="card">
@@ -536,24 +657,23 @@ function renderFeedbackListPage({ state, feedbackItems, message = '' }) {
       <div class="item-list">
         ${renderBlockedFeedbackDevices(state)}
       </div>
-    </div>`
+    </div>`,
+    csrfToken
   );
 }
 
-function renderAnnouncementListPage({ state, announcementItems, message = '' }) {
+function renderAnnouncementListPage({ state, announcementItems, message = '', csrfToken = '', admin }) {
   const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
   const activeCount = announcementItems.filter((item) => item.active !== false).length;
 
   return shell(
     '公告列表',
-    `${adminNav('announcements')}<div class="topbar">
+    `${adminNav('announcements', admin)}<div class="topbar">
       <div>
         <h1 class="title">公告列表</h1>
         <div class="subtitle"><a href="/admin">返回后台</a> · 共 ${announcementItems.length} 条，${activeCount} 条启用中</div>
       </div>
-      <div class="row">
-        <a class="btn secondary" href="/admin/logout">退出登录</a>
-      </div>
+
     </div>
     ${notice}
     <div class="split">
@@ -585,11 +705,12 @@ function renderAnnouncementListPage({ state, announcementItems, message = '' }) 
           ${renderAnnouncementItems(announcementItems, '/admin/announcements')}
         </div>
       </div>
-    </div>`
+    </div>`,
+    csrfToken
   );
 }
 
-function renderFeedbackDetail({ state, item, message = '' }) {
+function renderFeedbackDetail({ state, item, message = '', csrfToken = '', admin }) {
   const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
   const replies = Array.isArray(item.replies) ? item.replies : [];
   const deviceId = feedbackDeviceText(item);
@@ -598,7 +719,7 @@ function renderFeedbackDetail({ state, item, message = '' }) {
 
   return shell(
     `反馈 ${item.id}`,
-    `${adminNav('feedback')}<div class="topbar">
+    `${adminNav('feedback', admin)}<div class="topbar">
       <div>
         <h1 class="title">反馈详情</h1>
         <div class="subtitle"><a href="/admin">返回后台</a> · ${escapeHtml(item.id)}</div>
@@ -688,7 +809,8 @@ function renderFeedbackDetail({ state, item, message = '' }) {
           </div>
         </form>
       </div>
-    </div>`
+    </div>`,
+    csrfToken
   );
 }
 
@@ -696,10 +818,15 @@ export {
   escapeHtml,
   formatDateTime,
   renderAnnouncementListPage,
+  renderAccountPage,
+  renderAdminListPage,
+  renderAuditPage,
   renderDashboard,
   renderFeedbackDetail,
   renderFeedbackListPage,
   renderLoginPage,
+  renderStudentListPage,
+  renderStudentRevealPage,
   renderVersionPage,
   shell
 };

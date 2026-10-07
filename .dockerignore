@@ -7,6 +7,5 @@ runtime
 backups
 site
 deploy
-scripts
 test
 *.md

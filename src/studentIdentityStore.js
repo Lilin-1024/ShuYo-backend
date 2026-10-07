@@ -114,6 +114,20 @@ class StudentIdentityStore {
     ]).toString('utf8');
   }
 
+  listAccounts(limit = 100) {
+    return this.db.prepare(`
+      SELECT id, student_id_masked, status, created_at, last_verified_at
+      FROM student_accounts ORDER BY last_verified_at DESC LIMIT ?
+    `).all(Math.min(Math.max(Number(limit) || 100, 1), 500));
+  }
+
+  getAccount(accountId) {
+    return this.db.prepare(`
+      SELECT id, student_id_masked, status, created_at, last_verified_at
+      FROM student_accounts WHERE id = ?
+    `).get(accountId) ?? null;
+  }
+
   createSession({ studentId, deviceLabel = '', previousToken = null, now = new Date() }) {
     const normalized = normalizedStudentId(studentId);
     const key = this.studentKey(normalized);
