@@ -38,31 +38,31 @@ function shell(title, body, csrfToken = '') {
     :root {
       --bg: #ffffff;
       --panel: #ffffff;
-      --line: #000000;
-      --text: #000000;
-      --muted: #000000;
-      --accent: #000000;
+      --line: #e4ebf2;
+      --text: #243447;
+      --muted: #6b7785;
+      --accent: #1976d2;
       --input: #ffffff;
-      --accent-soft: #ffffff;
-      --warn: #000000;
-      --ok: #000000;
-      --bad: #000000;
+      --accent-soft: #edf4fb;
+      --warn: #ad6a00;
+      --ok: #1976d2;
+      --bad: #a63a32;
       --shadow: none;
-      --stat-line: #000000;
+      --stat-line: #e4ebf2;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: Arial, Helvetica, sans-serif;
+      font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       background: var(--bg);
       color: var(--text);
     }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
     .page {
-      max-width: 980px;
-      margin: 0;
-      padding: 16px 20px 40px;
+      max-width: 1080px;
+      margin: auto;
+      padding: 30px 24px 60px;
     }
     .topbar {
       display: flex;
@@ -83,9 +83,9 @@ function shell(title, body, csrfToken = '') {
     }
     .btn, button {
       border: 0;
-      background: #fff;
-      color: #000;
-      padding: 4px 0;
+      background: var(--accent);
+      color: #fff;
+      padding: 8px 14px;
       border-radius: 0;
       font-size: 14px;
       cursor: pointer;
@@ -93,12 +93,12 @@ function shell(title, body, csrfToken = '') {
     .btn:hover, button:hover { text-decoration: underline; }
     .btn.secondary {
       background: var(--accent-soft);
-      color: var(--text);
+      color: var(--accent);
     }
     .btn.danger,
     button.danger {
-      background: #fff;
-      color: #000;
+      background: var(--accent-soft);
+      color: var(--bad);
     }
     .btn.small-btn,
     button.small-btn {
@@ -136,7 +136,7 @@ function shell(title, body, csrfToken = '') {
     textarea,
     select {
       width: 100%;
-      border: 1px solid #aaa;
+      border: 1px solid #b8c5d1;
       border-radius: 0;
       padding: 8px 6px;
       font: inherit;
@@ -190,7 +190,7 @@ function shell(title, body, csrfToken = '') {
     .table th, .table td {
       text-align: left;
       padding: 10px 8px;
-      border-bottom: 0;
+      border-bottom: 1px solid var(--line);
       vertical-align: top;
     }
     .badge {
@@ -203,7 +203,7 @@ function shell(title, body, csrfToken = '') {
       color: var(--accent);
     }
     .badge.ok, .badge.warn { background: var(--accent-soft); color: var(--accent); }
-    .badge.bad { background: #000; color: #fff; }
+    .badge.bad { background: #fff1ef; color: var(--bad); }
     .split {
       display: grid;
       grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
@@ -215,7 +215,7 @@ function shell(title, body, csrfToken = '') {
     }
     .item {
       padding: 12px 0;
-      border-bottom: 0;
+      border-bottom: 1px solid var(--line);
     }
     .item:last-child { border-bottom: 0; }
     .small {
@@ -241,12 +241,13 @@ function shell(title, body, csrfToken = '') {
       border-radius: 0;
       margin-bottom: 16px;
     }
-    .nav { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 20px; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
-    .nav a { color: #000; padding: 0; }
-    .nav a.active { font-weight: 700; }
+    .nav { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 28px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+    .nav a { color: var(--muted); padding: 0; }
+    .nav a.active { font-weight: 700; color: var(--accent); }
     .nav-account { margin-left: auto; font-size: 13px; }
     .nav form { margin: 0; }
-    .admin-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; border-bottom: 1px solid #ddd; padding: 14px 0; }
+    .nav button { background: transparent; color: var(--muted); padding: 0; }
+    .admin-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; border-bottom: 1px solid var(--line); padding: 14px 0; }
     .admin-row form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .admin-row select, .admin-row input { width: auto; max-width: 240px; }
     .admin-row .mono { font-size: 12px; }
