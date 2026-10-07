@@ -46,3 +46,24 @@ test('does not follow an expired-session redirect', async () => {
   });
   assert.deepEqual(result, { status: 'session_expired' });
 });
+
+test('finds an identity after a large page prefix and stops reading', async () => {
+  const encoder = new TextEncoder();
+  let canceled = false;
+  const schoolResponse = new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('x'.repeat(600 * 1024)));
+      controller.enqueue(encoder.encode('<form id="form"><input name="xh_id" value="23123456">'));
+      controller.enqueue(encoder.encode('x'.repeat(600 * 1024)));
+    },
+    cancel() { canceled = true; }
+  }));
+  const result = await probeSchoolIdentity({
+    cookieHeader: 'JSESSIONID=temporary-value',
+    expectedStudentId: '23123456',
+    fetchImpl: async () => schoolResponse
+  });
+  assert.equal(result.status, 'verified');
+  assert.equal(result.matchesLocal, true);
+  assert.equal(canceled, true);
+});
