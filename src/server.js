@@ -381,6 +381,11 @@ app.post('/api/v1/student/sessions/revoke-all', requireStudentSession, (req, res
   res.status(204).end();
 });
 
+app.delete('/api/v1/student/account', requireStudentSession, (req, res) => {
+  studentIdentityStore.deleteAccount(req.studentSession.account_id);
+  res.status(204).end();
+});
+
 app.get('/api/v1/version', async (req, res, next) => {
   try {
     const state = await readState();

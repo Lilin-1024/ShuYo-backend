@@ -92,3 +92,18 @@ test('encrypted student identity survives a server restart without plaintext on 
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('deleting an account removes its student ID and every device session', () => {
+  const store = createStore();
+  try {
+    const first = store.createSession({ studentId: '23123456' });
+    const second = store.createSession({ studentId: '23123456' });
+    assert.equal(store.deleteAccount(first.accountId), true);
+    assert.equal(store.getStudentId(first.accountId), null);
+    assert.equal(store.getSession(first.token), null);
+    assert.equal(store.getSession(second.token), null);
+    assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM student_audit').get().n, 0);
+  } finally {
+    store.close();
+  }
+});

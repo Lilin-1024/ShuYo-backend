@@ -216,6 +216,14 @@ class StudentIdentityStore {
     });
   }
 
+  deleteAccount(accountId) {
+    return this.transaction(() => {
+      this.db.prepare('DELETE FROM student_audit WHERE account_id = ?').run(accountId);
+      this.db.prepare('DELETE FROM student_sessions WHERE account_id = ?').run(accountId);
+      return Number(this.db.prepare('DELETE FROM student_accounts WHERE id = ?').run(accountId).changes) === 1;
+    });
+  }
+
   close() {
     this.db.close();
   }
