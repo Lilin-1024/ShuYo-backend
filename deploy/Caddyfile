@@ -1,0 +1,24 @@
+www.{$SITE_DOMAIN} {
+    redir https://{$SITE_DOMAIN}{uri} permanent
+}
+
+{$API_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy api:3000
+}
+
+{$SITE_DOMAIN} {
+    encode zstd gzip
+
+    @old_home path /doc /doc/ /doc/index.html
+    redir @old_home / 308
+
+    handle /api/* {
+        reverse_proxy api:3000
+    }
+
+    handle {
+        root * /srv/site
+        file_server
+    }
+}

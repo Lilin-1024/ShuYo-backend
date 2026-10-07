@@ -26,6 +26,15 @@ import {
   renderLoginPage
 } from './views.js';
 
+if (process.env.NODE_ENV === 'production') {
+  for (const name of ['ADMIN_PASSWORD', 'COOKIE_SECRET', 'PRESENCE_HMAC_SECRET']) {
+    const value = process.env[name]?.trim();
+    if (!value || value === 'change-me' || value.startsWith('change-this-')) {
+      throw new Error(`${name} must be configured before starting in production`);
+    }
+  }
+}
+
 const app = express();
 const port = Number.parseInt(process.env.PORT ?? '3000', 10) || 3000;
 

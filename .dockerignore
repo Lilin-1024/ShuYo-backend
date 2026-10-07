@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+node_modules
+data
+runtime
+backups
+site
+deploy
+scripts
+test
+*.md

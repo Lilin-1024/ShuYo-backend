@@ -2,6 +2,7 @@ node_modules/
 
 .env
 .env.*
+!.env.example
 *.local
 
 data/*
@@ -22,5 +23,6 @@ data/*
 *.db
 *.sqlite
 *.sqlite3
-*.md
-/.DS_Store
+runtime/
+backups/
+.DS_Store
