@@ -12,7 +12,7 @@ import {
   validateAdminPassword
 } from './auth.js';
 import { createRateLimit } from './rateLimit.js';
-import { fetchSchoolStudentId, maskedStudentId, probeSchoolIdentity } from './identityProbe.js';
+import { fetchSchoolStudentId, maskedStudentId } from './identityProbe.js';
 import { StudentIdentityStore } from './studentIdentityStore.js';
 import { dataDir, hashToken, makeId, mutateState, nowIso, readState } from './store.js';
 import {
@@ -76,10 +76,9 @@ app.use(cookieParser(process.env.COOKIE_SECRET ?? 'change-this-cookie-secret'));
 app.use(express.json({ limit: '64kb' }));
 app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 // Body-parser errors may contain the raw request body. Never print a school
-// session value, even when a malformed probe request cannot reach its route.
+// session value, even when a malformed identity request cannot reach its route.
 app.use((error, req, res, next) => {
-  if (req.path !== '/api/v1/identity/probe' &&
-      !req.path.startsWith('/api/v1/student/')) return next(error);
+  if (!req.path.startsWith('/api/v1/student/')) return next(error);
   res.setHeader('Cache-Control', 'no-store');
   res.status(400).json({ success: false, error: '请求格式无效。' });
 });
@@ -102,12 +101,6 @@ const loginRateLimit = createRateLimit({
   message: '登录尝试过于频繁，请稍后再试。'
 });
 
-const identityProbeRateLimit = createRateLimit({
-  windowMs: 10 * 60 * 1000,
-  max: 6,
-  message: '测试请求过于频繁，请稍后再试。'
-});
-
 const studentEnrollmentRateLimit = createRateLimit({
   windowMs: 10 * 60 * 1000,
   max: 6,
@@ -128,20 +121,6 @@ function requireStudentSession(req, res, next) {
   }
   req.studentSession = session;
   next();
-}
-
-function identityProbeAvailable() {
-  const expiresAt = Date.parse(process.env.IDENTITY_PROBE_EXPIRES_AT ?? '');
-  return process.env.IDENTITY_PROBE_ENABLED === 'true' &&
-    Number.isFinite(expiresAt) &&
-    Date.now() < expiresAt &&
-    Boolean(process.env.IDENTITY_PROBE_KEY);
-}
-
-function validIdentityProbeKey(value) {
-  const expected = process.env.IDENTITY_PROBE_KEY ?? '';
-  if (typeof value !== 'string' || !expected || value.length !== expected.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(value), Buffer.from(expected));
 }
 
 function jsonEtag(value) {
@@ -303,23 +282,6 @@ app.get('/health', (req, res) => {
     service: 'lehu-update-feedback-server',
     time: nowIso()
   });
-});
-
-app.post('/api/v1/identity/probe', identityProbeRateLimit, async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  if (!identityProbeAvailable()) {
-    res.status(404).json({ success: false, error: '测试已关闭。' });
-    return;
-  }
-  if (!validIdentityProbeKey(req.get('x-identity-probe-key'))) {
-    res.status(403).json({ success: false, error: '测试访问码无效。' });
-    return;
-  }
-  const result = await probeSchoolIdentity({
-    cookieHeader: req.body?.schoolCookie,
-    expectedStudentId: req.body?.expectedStudentId
-  });
-  res.status(200).json({ success: true, data: result });
 });
 
 app.post('/api/v1/student/sessions', studentEnrollmentRateLimit, async (req, res) => {
