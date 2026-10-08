@@ -27,7 +27,7 @@ function nextSortOrder(items) {
 }
 
 function moveItem(items, id, direction) {
-  const orderedItems = ordered(items.filter((item) => !item.deletedAt));
+  const orderedItems = publicItems(items);
   const index = orderedItems.findIndex((item) => item.id === id);
   if (index < 0) return false;
   const target = index + (direction === 'up' ? -1 : direction === 'down' ? 1 : 0);

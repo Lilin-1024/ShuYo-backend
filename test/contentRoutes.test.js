@@ -68,6 +68,21 @@ test('public announcements and tips, ordering, deletion, markdown and image boun
     })).status, 302);
     data = (await (await get('/api/v1/announcements')).json()).data;
     assert.deepEqual(data.map((item) => item.title), ['第一条已改']);
+    const managementHtml = await (await get('/admin/announcements', session)).text();
+    const publicHeading = managementHtml.indexOf('<h2>公开</h2>');
+    const pendingHeading = managementHtml.indexOf('<h2>待选择</h2>');
+    assert.ok(publicHeading >= 0 && pendingHeading > publicHeading);
+    assert.ok(managementHtml.indexOf('第一条已改', publicHeading) < pendingHeading);
+    assert.ok(managementHtml.indexOf('第二条', pendingHeading) > pendingHeading);
+    assert.equal((await post('/admin/announcements/' + first.id + '/delete', session, {
+      _csrf: csrf
+    })).status, 409);
+    assert.equal((await post('/admin/announcements/' + second.id + '/move', session, {
+      direction: 'up', _csrf: csrf
+    })).status, 400);
+    assert.equal((await post('/admin/announcements/' + first.id + '/visibility', session, {
+      active: 'false', _csrf: csrf
+    })).status, 302);
     assert.equal((await post('/admin/announcements/' + first.id + '/delete', session, {
       _csrf: csrf
     })).status, 302);

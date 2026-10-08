@@ -5,8 +5,10 @@ function renderContentListPage({
 }) {
   const route = kind === 'tips' ? '/admin/tips' : '/admin/announcements';
   const isTip = kind === 'tips';
-  const publicCount = items.filter((item) => item.active !== false).length;
-  const cards = items.map((item, index) => {
+  const published = items.filter((item) => item.active !== false);
+  const pending = items.filter((item) => item.active === false)
+    .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
+  const renderCard = (item, index, listLength) => {
     const itemRoute = route + '/' + encodeURIComponent(item.id);
     const publicItem = item.active !== false;
     const preview = isTip
@@ -18,7 +20,7 @@ function renderContentListPage({
         <div>
           <div class="publication-title-row">
             <h3>${escapeHtml(item.title)}</h3>
-            <span class="badge ${publicItem ? 'ok' : 'bad'}">${publicItem ? '公开' : '不公开'}</span>
+            <span class="badge ${publicItem ? 'ok' : 'bad'}">${publicItem ? '公开' : '待选择'}</span>
           </div>
           <p class="publication-meta">创建于 ${escapeHtml(formatDateTime(item.createdAt))} · 更新于 ${escapeHtml(formatDateTime(item.updatedAt))}</p>
         </div>
@@ -27,16 +29,17 @@ function renderContentListPage({
       <div class="publication-actions">
         <form method="post" action="${itemRoute}/visibility">
           <input type="hidden" name="active" value="${publicItem ? 'false' : 'true'}" />
-          <button class="btn secondary" type="submit">${publicItem ? '设为不公开' : '公开'}</button>
+          <button class="btn secondary" type="submit">${publicItem ? '撤回到待选择' : '公开'}</button>
         </form>
+        ${publicItem ? `
         <form method="post" action="${itemRoute}/move">
           <input type="hidden" name="direction" value="up" />
           <button class="btn secondary" type="submit" ${index === 0 ? 'disabled' : ''} aria-label="上移 ${escapeHtml(item.title)}">上移</button>
         </form>
         <form method="post" action="${itemRoute}/move">
           <input type="hidden" name="direction" value="down" />
-          <button class="btn secondary" type="submit" ${index === items.length - 1 ? 'disabled' : ''} aria-label="下移 ${escapeHtml(item.title)}">下移</button>
-        </form>
+          <button class="btn secondary" type="submit" ${index === listLength - 1 ? 'disabled' : ''} aria-label="下移 ${escapeHtml(item.title)}">下移</button>
+        </form>` : ''}
       </div>
       <details class="publication-editor">
         <summary>编辑内容</summary>
@@ -46,15 +49,15 @@ function renderContentListPage({
           <button type="submit">保存修改</button>
         </form>
       </details>
-      <details class="publication-delete">
+      ${publicItem ? '' : `<details class="publication-delete">
         <summary>删除</summary>
-        <p>删除后不会出现在公开列表中，操作记录会保留。</p>
+        <p>删除后将从待选择列表移除，操作记录会保留。</p>
         <form method="post" action="${itemRoute}/delete">
           <button class="btn danger" type="submit">确认删除</button>
         </form>
-      </details>
+      </details>`}
     </article>`;
-  }).join('');
+  };
   const upload = isTip ? `<section class="panel">
     <div class="section-heading"><h2>上传图片</h2><p>支持 PNG、JPEG、WebP，单张不超过 2 MB。</p></div>
     <form method="post" action="/admin/tips/images" enctype="multipart/form-data" class="upload-form">
@@ -68,7 +71,7 @@ function renderContentListPage({
   return shell(label + '管理', `${adminNav(kind, admin)}
     <header class="content-header">
       <div><p class="eyebrow">内容管理</p><h1>${escapeHtml(label)}</h1>
-        <p>共 ${items.length} 条 · 已公开 ${publicCount} 条</p></div>
+        <p>公开 ${published.length} 条 · 待选择 ${pending.length} 条</p></div>
       <a class="btn secondary" href="${isTip ? '/api/v1/tips' : '/api/v1/announcements'}" target="_blank" rel="noopener noreferrer">查看公开列表</a>
     </header>
     ${message ? `<div class="notice">${escapeHtml(message)}</div>` : ''}
@@ -84,8 +87,12 @@ function renderContentListPage({
     </section>
     ${upload}
     <section class="panel">
-      <div class="section-heading"><h2>管理列表</h2><p>上移、下移决定应用内的显示顺序。</p></div>
-      <div class="publication-list">${cards || '<p class="muted">暂无内容。</p>'}</div>
+      <div class="section-heading"><h2>公开</h2><p>此处从上到下，就是客户端的显示次序。</p></div>
+      <div class="publication-list">${published.map((item, index) => renderCard(item, index, published.length)).join('') || '<p class="muted">暂无公开内容。</p>'}</div>
+    </section>
+    <section class="panel">
+      <div class="section-heading"><h2>待选择</h2><p>此处的内容不会在客户端显示，可继续编辑、公开或删除。</p></div>
+      <div class="publication-list">${pending.map((item, index) => renderCard(item, index, pending.length)).join('') || '<p class="muted">暂无待选择内容。</p>'}</div>
     </section>`, csrfToken);
 }
 

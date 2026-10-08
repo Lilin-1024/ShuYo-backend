@@ -456,7 +456,7 @@ function renderAnnouncementItems(items) {
   if (!items.length) return '<p class="muted">暂无公告。</p>';
   return items.map((item) => `<div class="item">
     <strong>${escapeHtml(item.title)}</strong>
-    <span class="badge ${item.active !== false ? 'ok' : 'bad'}">${item.active !== false ? '公开' : '不公开'}</span>
+    <span class="badge ${item.active !== false ? 'ok' : 'bad'}">${item.active !== false ? '公开' : '待选择'}</span>
     <p class="muted">${previewText(item.content, 140)}</p>
     <small>${escapeHtml(formatDateTime(item.createdAt))}</small>
   </div>`).join('');

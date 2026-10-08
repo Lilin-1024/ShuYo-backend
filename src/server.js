@@ -877,7 +877,7 @@ function registerContentRoutes(route, key, label) {
       await mutateState((state) => {
         state[key].unshift({
           id, title, content, active,
-          sortOrder: nextSortOrder(state[key]),
+          sortOrder: active ? nextSortOrder(publicItems(state[key])) : 0,
           createdAt: nowIso(), updatedAt: nowIso()
         });
       });
@@ -914,13 +914,16 @@ function registerContentRoutes(route, key, label) {
       const updated = await mutateState((state) => {
         const item = state[key].find((entry) => entry.id === req.params.id && !entry.deletedAt);
         if (!item) return false;
+        if (active && item.active === false) {
+          item.sortOrder = nextSortOrder(publicItems(state[key]));
+        }
         item.active = active;
         item.updatedAt = nowIso();
         return true;
       });
       if (!updated) { res.status(404).send('内容不存在。'); return; }
       adminStore.audit(req.admin.id, `${auditName}.visibility`, auditName, req.params.id, active ? 'public' : 'private');
-      adminRedirectWithMessage(res, route, active ? '已公开。' : '已设为不公开。');
+      adminRedirectWithMessage(res, route, active ? '已公开。' : '已撤回到待选择。');
     } catch (error) { next(error); }
   });
 
@@ -940,10 +943,12 @@ function registerContentRoutes(route, key, label) {
       const deleted = await mutateState((state) => {
         const item = state[key].find((entry) => entry.id === req.params.id && !entry.deletedAt);
         if (!item) return false;
+        if (item.active !== false) return 'public';
         item.deletedAt = nowIso();
         item.active = false;
         return true;
       });
+      if (deleted === 'public') { res.status(409).send('请先撤回到待选择，再删除。'); return; }
       if (!deleted) { res.status(404).send('内容不存在。'); return; }
       adminStore.audit(req.admin.id, `${auditName}.delete`, auditName, req.params.id);
       adminRedirectWithMessage(res, route, `${label}已删除。`);
