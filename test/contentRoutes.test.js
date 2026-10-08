@@ -105,14 +105,24 @@ test('public announcements and tips, ordering, deletion, markdown and image boun
     assert.equal(upload.status, 302);
     const uploadedPath = new URL(upload.headers.get('location'), base).searchParams.get('image');
     assert.match(uploadedPath, /^\/api\/v1\/tips\/images\/[0-9a-f-]+\.png$/);
-    assert.equal((await get(uploadedPath)).status, 200);
+    assert.equal((await get(uploadedPath)).status, 404);
+    assert.equal((await get(uploadedPath.replace('/api/v1/', '/admin/'), session)).status, 200);
     assert.equal((await post('/admin/tips/' + tip.id + '/edit', session, {
       title: '使用方法', content: '![示例](' + uploadedPath + ')', _csrf: csrf
     })).status, 302);
     const tipPage = await get('/admin/tips', session);
     const tipHtml = await tipPage.text();
     assert.match(tipHtml, /<img/);
+    assert.match(tipHtml, /src="\/admin\/tips\/images\//);
     assert.match(tipHtml, /<form[^>]*multipart\/form-data[^>]*><input type="hidden" name="_csrf"/);
+    assert.equal((await post('/admin/tips/' + tip.id + '/visibility', session, {
+      active: 'true', _csrf: csrf
+    })).status, 302);
+    assert.equal((await get(uploadedPath)).status, 200);
+    assert.equal((await post('/admin/tips/' + tip.id + '/visibility', session, {
+      active: 'false', _csrf: csrf
+    })).status, 302);
+    assert.equal((await get(uploadedPath)).status, 404);
     const unsafeMarkup = await post('/admin/tips/' + tip.id + '/edit', session, {
       title: '使用方法', content: '<script>alert(1)</script>', _csrf: csrf
     });

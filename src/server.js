@@ -449,17 +449,35 @@ app.get('/api/v1/tips', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.get('/api/v1/tips/images/:filename', (req, res) => {
+function sendTipImage(req, res, { publicImage }) {
   const filename = String(req.params.filename ?? '');
   if (!/^[0-9a-f-]{36}\.(png|jpg|webp)$/.test(filename)) {
     res.status(404).end();
     return;
   }
-  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('Cache-Control', publicImage ? 'public, max-age=0, must-revalidate' : 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.sendFile(filename, { root: tipImageDir }, (error) => {
     if (error && !res.headersSent) res.status(error.statusCode ?? 404).end();
   });
+}
+
+app.get('/api/v1/tips/images/:filename', async (req, res, next) => {
+  try {
+    const filename = String(req.params.filename ?? '');
+    if (!/^[0-9a-f-]{36}\.(png|jpg|webp)$/.test(filename)) {
+      res.status(404).end();
+      return;
+    }
+    const pathInMarkdown = `/api/v1/tips/images/${filename}`;
+    const state = await readState();
+    if (!state.tips.some((item) => !item.deletedAt && item.active !== false &&
+        item.content.includes(pathInMarkdown))) {
+      res.status(404).end();
+      return;
+    }
+    sendTipImage(req, res, { publicImage: true });
+  } catch (error) { next(error); }
 });
 
 app.get('/api/v1/service-status/webvpn', (req, res) => {
@@ -935,6 +953,10 @@ function registerContentRoutes(route, key, label) {
 
 registerContentRoutes('/admin/announcements', 'announcements', '公告');
 registerContentRoutes('/admin/tips', 'tips', '使用提示');
+
+app.get('/admin/tips/images/:filename', requireAdmin, (req, res) => {
+  sendTipImage(req, res, { publicImage: false });
+});
 
 app.post('/admin/tips/images', requireAdmin, tipImageRateLimit, receiveTipImage, requireCsrf,
   async (req, res, next) => {

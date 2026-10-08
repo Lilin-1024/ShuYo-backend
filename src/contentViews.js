@@ -10,7 +10,8 @@ function renderContentListPage({
     const itemRoute = route + '/' + encodeURIComponent(item.id);
     const publicItem = item.active !== false;
     const preview = isTip
-      ? '<div class="markdown-preview">' + renderMarkdown(item.content) + '</div>'
+      ? '<div class="markdown-preview">' + renderMarkdown(item.content)
+        .replaceAll('src="/api/v1/tips/images/', 'src="/admin/tips/images/') + '</div>'
       : '<p class="publication-excerpt">' + escapeHtml(item.content) + '</p>';
     return `<article class="publication-card">
       <div class="publication-heading">
