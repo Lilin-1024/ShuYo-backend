@@ -395,6 +395,16 @@ function renderFeedbackDeviceBlockForm({ deviceId, blocked, returnTo }) {
   </form>`;
 }
 
+function renderFeedbackAccountBlockForm({ accountId, blocked, returnTo }) {
+  if (!accountId) return '';
+  return `<form method="post" action="/admin/feedback/account-block" style="display: inline;">
+    <input type="hidden" name="accountId" value="${escapeHtml(accountId)}" />
+    <input type="hidden" name="blocked" value="${blocked ? 'false' : 'true'}" />
+    <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}" />
+    <button class="${blocked ? 'small-btn' : 'small-btn danger'}" type="submit">${blocked ? '解除账户拉黑' : '拉黑账户'}</button>
+  </form>`;
+}
+
 function renderFeedbackItems(feedbackItems, state, returnTo) {
   if (!feedbackItems.length) {
     return '<div class="small">暂无反馈。</div>';
@@ -403,7 +413,8 @@ function renderFeedbackItems(feedbackItems, state, returnTo) {
   return feedbackItems
     .map((item) => {
       const deviceId = feedbackDeviceText(item);
-      const blocked = Boolean(blockedFeedbackDevice(state, deviceId));
+      const student = item.source === 'student';
+      const blocked = student ? item.blocked : Boolean(blockedFeedbackDevice(state, deviceId));
       return `
         <div class="item">
           <div class="row" style="justify-content: space-between; align-items: start;">
@@ -413,12 +424,15 @@ function renderFeedbackItems(feedbackItems, state, returnTo) {
               </div>
               <div class="small">${previewText(item.content, 120)}</div>
               <div class="small" style="margin-top: 6px;">${escapeHtml(formatDateTime(item.createdAt))} · ${escapeHtml(item.appVersion || '-')}</div>
-              <div class="small mono" style="margin-top: 4px;">发送者：${escapeHtml(deviceId)}</div>
+              <div class="small mono" style="margin-top: 4px;">${student ? '已核验账户：' + escapeHtml(item.accountId) : '旧版设备码：' + escapeHtml(deviceId)}</div>
             </div>
             <div class="row" style="justify-content: flex-end;">
               ${blocked ? '<span class="badge bad">已拉黑</span>' : ''}
+              <span class="badge ${student ? 'ok' : 'warn'}">${student ? '账户反馈' : '旧版反馈'}</span>
               <span class="badge ${feedbackBadgeClass(item.status)}">${escapeHtml(item.status)}</span>
-              ${renderFeedbackDeviceBlockForm({ deviceId, blocked, returnTo })}
+              ${student
+                ? renderFeedbackAccountBlockForm({ accountId: item.accountId, blocked, returnTo })
+                : renderFeedbackDeviceBlockForm({ deviceId, blocked, returnTo })}
             </div>
           </div>
         </div>`;
@@ -623,8 +637,9 @@ function renderDashboard({
         <div class="stat"><div class="muted">近 1 日活跃用户</div><div class="value">${Number(presence.active1d ?? 0)}</div></div>
         <div class="stat"><div class="muted">近 3 日活跃用户</div><div class="value">${Number(presence.active3d ?? 0)}</div></div>
         <div class="stat"><div class="muted">近 7 日活跃用户</div><div class="value">${Number(presence.active7d ?? 0)}</div></div>
-        <div class="stat"><div class="muted">累计用户</div><div class="value">${Number(presence.total ?? 0)}</div></div>
+        <div class="stat"><div class="muted">累计已核验活跃账户</div><div class="value">${Number(presence.total ?? 0)}</div></div>
       </div>
+      <p class="small">按北京时间自然日及已核验学生账户去重；未核验用户不计入。旧版自报数据已退出统计口径。</p>
     </div>
     <div class="stats-card">
       <div class="stats">
@@ -673,7 +688,7 @@ function renderVersionPage({ state, message = '', csrfToken = '', admin }) {
     </section>`, csrfToken);
 }
 
-function renderFeedbackListPage({ state, feedbackItems, message = '', csrfToken = '', admin }) {
+function renderFeedbackListPage({ state, feedbackItems, accountBlocks = [], message = '', csrfToken = '', admin }) {
   const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
   const openCount = feedbackItems.filter((item) => item.status === 'open').length;
 
@@ -694,9 +709,10 @@ function renderFeedbackListPage({ state, feedbackItems, message = '', csrfToken 
     </div>
     <div class="card">
       <h2 class="title" style="font-size: 20px;">已拉黑发送者</h2>
-      <p class="subtitle">命中的客户端将无法继续提交问题反馈。</p>
+      <p class="subtitle">旧版按设备码拉黑；新版按已核验学生账户拉黑。</p>
       <div class="item-list">
         ${renderBlockedFeedbackDevices(state)}
+        ${accountBlocks.map((item) => `<div class="item"><div class="small mono">已核验账户：${escapeHtml(item.accountId)} · ${escapeHtml(formatDateTime(item.blockedAt))}</div>${renderFeedbackAccountBlockForm({ accountId: item.accountId, blocked: true, returnTo: '/admin/feedback' })}</div>`).join('')}
       </div>
     </div>`,
     csrfToken
@@ -707,8 +723,9 @@ function renderFeedbackDetail({ state, item, message = '', csrfToken = '', admin
   const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
   const replies = Array.isArray(item.replies) ? item.replies : [];
   const deviceId = feedbackDeviceText(item);
-  const blockedDevice = blockedFeedbackDevice(state, deviceId);
-  const isBlocked = Boolean(blockedDevice);
+  const student = item.source === 'student';
+  const blockedDevice = student ? null : blockedFeedbackDevice(state, deviceId);
+  const isBlocked = student ? item.blocked : Boolean(blockedDevice);
 
   return shell(
     `反馈 ${item.id}`,
@@ -719,6 +736,7 @@ function renderFeedbackDetail({ state, item, message = '', csrfToken = '', admin
       </div>
       <div class="row">
         <span class="badge ${item.status === 'open' ? 'warn' : item.status === 'closed' ? 'bad' : 'ok'}">${escapeHtml(item.status)}</span>
+        <span class="badge ${student ? 'ok' : 'warn'}">${student ? '账户反馈' : '旧版反馈'}</span>
         ${isBlocked ? '<span class="badge bad">发送者已拉黑</span>' : ''}
       </div>
     </div>
@@ -746,17 +764,16 @@ function renderFeedbackDetail({ state, item, message = '', csrfToken = '', admin
           <div style="margin-top: 6px;">${escapeHtml(item.platform || '-')}</div>
         </div>
         <div>
-          <div class="small">发送者唯一标识</div>
-          <div class="mono" style="margin-top: 6px;">${escapeHtml(deviceId)}</div>
+          <div class="small">${student ? '已核验账户标识' : '旧版设备码'}</div>
+          <div class="mono" style="margin-top: 6px;">${escapeHtml(student ? item.accountId : deviceId)}</div>
+          ${student && admin.role === 'superadmin' ? `<a href="/admin/students?accountId=${encodeURIComponent(item.accountId)}">按用途查看学号</a>` : ''}
         </div>
       </div>
       <div class="row" style="margin-top: 16px;">
-        ${isBlocked ? `<span class="small">已于 ${escapeHtml(formatDateTime(blockedDevice.blockedAt))} 拉黑。</span>` : '<span class="small">该发送者当前未被拉黑。</span>'}
-        ${renderFeedbackDeviceBlockForm({
-          deviceId,
-          blocked: isBlocked,
-          returnTo: `/admin/feedback/${encodeURIComponent(item.id)}`
-        })}
+        ${isBlocked ? '<span class="small">该发送者已被拉黑。</span>' : '<span class="small">该发送者当前未被拉黑。</span>'}
+        ${student
+          ? renderFeedbackAccountBlockForm({ accountId: item.accountId, blocked: isBlocked, returnTo: `/admin/feedback/${encodeURIComponent(item.id)}` })
+          : renderFeedbackDeviceBlockForm({ deviceId, blocked: isBlocked, returnTo: `/admin/feedback/${encodeURIComponent(item.id)}` })}
       </div>
       <div style="margin-top: 16px;">
         <div class="small">内容</div>

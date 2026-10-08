@@ -15,6 +15,7 @@ import { AdminStore } from './adminStore.js';
 import { createRateLimit } from './rateLimit.js';
 import { fetchSchoolStudentId, maskedStudentId } from './identityProbe.js';
 import { StudentIdentityStore } from './studentIdentityStore.js';
+import { EngagementStore } from './engagementStore.js';
 import { startTipImageCleanup } from './tipImageCleanup.js';
 import {
   imageType, latestAnnouncement, moveItem, nextSortOrder, ordered,
@@ -61,6 +62,10 @@ const studentIdentityStore = new StudentIdentityStore({
   filename: `${dataDir}/accounts.sqlite`,
   hmacSecret: process.env.STUDENT_ID_HMAC_SECRET,
   encryptionKey: process.env.STUDENT_ID_ENCRYPTION_KEY
+});
+const engagementStore = new EngagementStore({
+  filename: `${dataDir}/engagement.sqlite`,
+  hmacSecret: process.env.PRESENCE_HMAC_SECRET ?? process.env.COOKIE_SECRET
 });
 const tipImageDir = path.join(dataDir, 'tip-images');
 const tipEditorScript = fileURLToPath(new URL('./adminTipEditor.js', import.meta.url));
@@ -146,6 +151,17 @@ const presenceRateLimit = createRateLimit({
   max: 30,
   message: '统计请求过于频繁，请稍后再试。'
 });
+const studentPresenceRateLimit = createRateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  keyFn: (req) => req.studentSession.account_id,
+  message: '统计请求过于频繁，请稍后再试。'
+});
+const studentFeedbackRateLimit = createRateLimit({
+  windowMs: 10 * 60 * 1000, max: 10,
+  keyFn: (req) => req.studentSession.account_id,
+  message: '反馈操作过于频繁，请稍后再试。'
+});
 
 const loginRateLimit = createRateLimit({
   windowMs: 10 * 60 * 1000,
@@ -204,40 +220,6 @@ function validateLength(value, max, label) {
   if (value.length > max) {
     throw new Error(`${label} 不能超过 ${max} 个字符`);
   }
-}
-
-function shanghaiDateKey(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-function presenceAccountKey(userId) {
-  const secret = process.env.PRESENCE_HMAC_SECRET ?? process.env.COOKIE_SECRET ?? 'change-this-presence-secret';
-  return crypto.createHmac('sha256', secret).update(String(userId)).digest('hex');
-}
-
-function presenceStats(state) {
-  const today = shanghaiDateKey();
-  const now = Date.now();
-  const countSince = (days) => {
-    const cutoff = new Date(now - (days - 1) * 24 * 60 * 60 * 1000);
-    const cutoffKey = shanghaiDateKey(cutoff);
-    return Object.values(state.presence ?? {}).filter((item) =>
-      Array.isArray(item.activeDates) && item.activeDates.some((day) => day >= cutoffKey && day <= today)
-    ).length;
-  };
-  return {
-    active1d: countSince(1),
-    active3d: countSince(3),
-    active7d: countSince(7),
-    total: Object.keys(state.presence ?? {}).length
-  };
 }
 
 function selectLatestAnnouncement(announcements) {
@@ -332,6 +314,13 @@ async function getFeedbackById(id) {
   };
 }
 
+function allFeedback(state) {
+  return [
+    ...engagementStore.listFeedback(),
+    ...state.feedback.map((item) => ({ ...item, source: 'legacy' }))
+  ].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
 app.get('/health', (req, res) => {
   res.json({
     ok: true,
@@ -400,6 +389,7 @@ app.post('/api/v1/student/sessions/revoke-all', requireStudentSession, (req, res
 });
 
 app.delete('/api/v1/student/account', requireStudentSession, (req, res) => {
+  engagementStore.deleteAccount(req.studentSession.account_id);
   studentIdentityStore.deleteAccount(req.studentSession.account_id);
   res.status(204).end();
 });
@@ -585,41 +575,63 @@ app.post('/api/v1/feedback', feedbackRateLimit, async (req, res, next) => {
   }
 });
 
-app.post('/api/v1/presence/heartbeat', presenceRateLimit, async (req, res, next) => {
+// Older apps may still call this endpoint. Their self-reported userId is not
+// verified, so it must not contribute to the new student-account statistics.
+app.post('/api/v1/presence/heartbeat', presenceRateLimit, (req, res) => {
+  res.status(204).end();
+});
+
+app.post('/api/v1/student/presence/heartbeat', requireStudentSession, studentPresenceRateLimit, (req, res) => {
+  engagementStore.recordPresence(req.studentSession.account_id);
+  res.status(204).end();
+});
+
+app.get('/api/v1/student/feedback', requireStudentSession, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, data: engagementStore.listFeedback(req.studentSession.account_id) });
+});
+
+app.post('/api/v1/student/feedback', requireStudentSession, studentFeedbackRateLimit, (req, res, next) => {
   try {
-    const userId = Number.parseInt(String(req.body.userId ?? ''), 10);
-    const installationId = trimText(req.body.installationId ?? '');
-    const appVersion = trimText(req.body.appVersion ?? '');
-    const platform = trimText(req.body.platform ?? '');
-    if (!Number.isSafeInteger(userId) || userId <= 0 || !installationId) {
-      res.status(400).json({ success: false, error: '统计参数无效。' });
-      return;
-    }
-    validateLength(installationId, 120, '安装标识');
+    const title = trimText(req.body?.title);
+    const content = trimText(req.body?.content);
+    const contact = trimText(req.body?.contact);
+    const appVersion = trimText(req.body?.appVersion);
+    const platform = trimText(req.body?.platform);
+    if (!content) return res.status(400).json({ success: false, error: '反馈内容不能为空。' });
+    validateLength(title, 120, '标题');
+    validateLength(content, 4000, '内容');
+    validateLength(contact, 120, '联系方式');
     validateLength(appVersion, 60, '客户端版本');
     validateLength(platform, 60, '平台信息');
-
-    const today = shanghaiDateKey();
-    const accountKey = presenceAccountKey(userId);
-    await mutateState((state) => {
-      state.presence = state.presence && typeof state.presence === 'object' ? state.presence : {};
-      const previous = state.presence[accountKey] ?? {};
-      const activeDates = Array.isArray(previous.activeDates) ? previous.activeDates : [];
-      if (!activeDates.includes(today)) activeDates.push(today);
-      activeDates.sort();
-      state.presence[accountKey] = {
-        firstSeenAt: previous.firstSeenAt ?? nowIso(),
-        lastSeenAt: nowIso(),
-        activeDates: activeDates.slice(-7),
-        installationKey: crypto.createHash('sha256').update(installationId).digest('hex'),
-        appVersion,
-        platform
-      };
-    });
-    res.status(204).end();
+    const result = engagementStore.createFeedback(req.studentSession.account_id,
+      { title, content, contact, appVersion, platform });
+    if (result.error === 'blocked') return res.status(403).json({ success: false, error: '该账户暂无法提交反馈。' });
+    if (result.error === 'rate_limited') return res.status(429).json({ success: false, error: '反馈提交过于频繁，请稍后再试。' });
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(201).json({ success: true, data: result });
   } catch (error) {
+    if (error instanceof Error && /^(标题|内容|联系方式|客户端版本|平台信息) 不能超过/.test(error.message)) {
+      res.status(400).json({ success: false, error: error.message });
+      return;
+    }
     next(error);
   }
+});
+
+app.get('/api/v1/student/feedback/:id', requireStudentSession, (req, res) => {
+  const item = engagementStore.getFeedback(req.params.id, req.studentSession.account_id);
+  if (!item) return res.status(404).json({ success: false, error: '未找到反馈。' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, data: item });
+});
+
+app.post('/api/v1/student/feedback/:id/close', requireStudentSession, studentFeedbackRateLimit, (req, res) => {
+  const item = engagementStore.getFeedback(req.params.id, req.studentSession.account_id);
+  if (!item) return res.status(404).json({ success: false, error: '未找到反馈。' });
+  engagementStore.closeFeedback(req.params.id, req.studentSession.account_id);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, data: engagementStore.getFeedback(req.params.id, req.studentSession.account_id) });
 });
 
 app.get('/api/v1/feedback/:id', async (req, res, next) => {
@@ -815,9 +827,9 @@ app.get('/admin/audit', requireAdmin, requireSuperadmin, (req, res) => {
 app.get('/admin', requireAdmin, async (req, res, next) => {
   try {
     const state = await readState();
-    const feedbackItems = [...state.feedback].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    const feedbackItems = allFeedback(state);
     const announcementItems = ordered(state.announcements.filter((item) => !item.deletedAt));
-    const presence = presenceStats(state);
+    const presence = engagementStore.presenceStats();
 
     res.status(200).send(
       renderDashboard({
@@ -992,12 +1004,13 @@ app.post('/admin/tips/images', requireAdmin, tipImageRateLimit, receiveTipImage,
 app.get('/admin/feedback', requireAdmin, async (req, res, next) => {
   try {
     const state = await readState();
-    const feedbackItems = [...state.feedback].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    const feedbackItems = allFeedback(state);
 
     res.status(200).send(
       renderFeedbackListPage({
         state,
         feedbackItems,
+        accountBlocks: engagementStore.listBlocks(),
         message: trimText(req.query.message ?? ''),
         csrfToken: res.locals.csrfToken,
         admin: req.admin
@@ -1006,6 +1019,19 @@ app.get('/admin/feedback', requireAdmin, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+app.post('/admin/feedback/account-block', requireAdmin, (req, res) => {
+  const accountId = trimText(req.body.accountId);
+  if (!studentIdentityStore.getAccount(accountId)) {
+    res.status(404).send('学生账户不存在。');
+    return;
+  }
+  const blocked = isTruthy(req.body.blocked);
+  engagementStore.setBlocked(accountId, blocked);
+  adminStore.audit(req.admin.id, 'feedback.account_block', 'student_account', accountId,
+    blocked ? 'blocked' : 'unblocked');
+  adminRedirectWithMessage(res, req.body.returnTo, blocked ? '账户已拉黑。' : '账户已解除拉黑。');
 });
 
 app.post('/admin/version', requireAdmin, async (req, res, next) => {
@@ -1096,7 +1122,8 @@ app.post('/admin/feedback/device-block', requireAdmin, async (req, res, next) =>
 app.get('/admin/feedback/:id', requireAdmin, async (req, res, next) => {
   try {
     const state = await readState();
-    const item = state.feedback.find((feedback) => feedback.id === req.params.id);
+    const item = engagementStore.getFeedback(req.params.id) ??
+      state.feedback.find((feedback) => feedback.id === req.params.id);
 
     if (!item) {
       res.status(404).send('未找到反馈。');
@@ -1130,6 +1157,17 @@ app.post('/admin/feedback/:id/reply', requireAdmin, async (req, res, next) => {
 
     const now = nowIso();
     const feedbackId = req.params.id;
+
+    if (engagementStore.getFeedback(feedbackId)) {
+      engagementStore.reply(feedbackId, {
+        author: req.admin.username, authorId: req.admin.id, message,
+        status: ['open', 'closed'].includes(status) ? status : 'replied'
+      });
+      adminStore.audit(req.admin.id, 'feedback.reply', 'feedback', feedbackId,
+        ['open', 'closed'].includes(status) ? status : 'replied');
+      res.redirect(`/admin/feedback/${encodeURIComponent(feedbackId)}`);
+      return;
+    }
 
     const updated = await mutateState((state) => {
       const item = state.feedback.find((feedback) => feedback.id === feedbackId);
@@ -1212,4 +1250,4 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-export { app, adminStore, studentIdentityStore };
+export { app, adminStore, studentIdentityStore, engagementStore };
