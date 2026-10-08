@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
@@ -14,6 +15,7 @@ import { AdminStore } from './adminStore.js';
 import { createRateLimit } from './rateLimit.js';
 import { fetchSchoolStudentId, maskedStudentId } from './identityProbe.js';
 import { StudentIdentityStore } from './studentIdentityStore.js';
+import { startTipImageCleanup } from './tipImageCleanup.js';
 import {
   imageType, latestAnnouncement, moveItem, nextSortOrder, ordered,
   publicItems, renderTipMarkdown, validateTipMarkdown
@@ -61,6 +63,7 @@ const studentIdentityStore = new StudentIdentityStore({
   encryptionKey: process.env.STUDENT_ID_ENCRYPTION_KEY
 });
 const tipImageDir = path.join(dataDir, 'tip-images');
+const tipEditorScript = fileURLToPath(new URL('./adminTipEditor.js', import.meta.url));
 const tipImageUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 2, parts: 3 }
@@ -85,7 +88,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'none'"],
+      scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:'],
       objectSrc: ["'none'"],
@@ -959,6 +962,10 @@ function registerContentRoutes(route, key, label) {
 registerContentRoutes('/admin/announcements', 'announcements', '公告');
 registerContentRoutes('/admin/tips', 'tips', '使用提示');
 
+app.get('/admin/assets/tip-editor.js', requireAdmin, (req, res) => {
+  res.type('application/javascript').sendFile(tipEditorScript);
+});
+
 app.get('/admin/tips/images/:filename', requireAdmin, (req, res) => {
   sendTipImage(req, res, { publicImage: false });
 });
@@ -973,7 +980,12 @@ app.post('/admin/tips/images', requireAdmin, tipImageRateLimit, receiveTipImage,
       const filename = `${crypto.randomUUID()}.${extension}`;
       await writeFile(path.join(tipImageDir, filename), req.file.buffer, { flag: 'wx', mode: 0o600 });
       adminStore.audit(req.admin.id, 'tips.image_upload', 'tip_image', filename);
-      res.redirect('/admin/tips?image=' + encodeURIComponent(`/api/v1/tips/images/${filename}`));
+      const imageUrl = `/api/v1/tips/images/${filename}`;
+      if ((req.get('accept') ?? '').includes('application/json')) {
+        res.json({ success: true, data: { url: imageUrl } });
+      } else {
+        res.redirect('/admin/tips?image=' + encodeURIComponent(imageUrl));
+      }
     } catch (error) { next(error); }
   });
 
@@ -1191,6 +1203,10 @@ app.use((error, req, res, next) => {
 
 if (process.env.NODE_ENV !== 'test') {
   await initializeWebVpnMonitor();
+  startTipImageCleanup({
+    directory: tipImageDir,
+    loadTips: async () => (await readState()).tips,
+  });
   app.listen(port, '0.0.0.0', () => {
     console.log(`Lehu update feedback server listening on ${port}`);
   });

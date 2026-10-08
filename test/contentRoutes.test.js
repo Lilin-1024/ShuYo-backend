@@ -133,7 +133,25 @@ test('public announcements and tips, ordering, deletion, markdown and image boun
     const tipHtml = await tipPage.text();
     assert.match(tipHtml, /<img/);
     assert.match(tipHtml, /src="\/admin\/tips\/images\//);
+    assert.match(tipHtml, /src="\/admin\/assets\/tip-editor\.js"/);
     assert.match(tipHtml, /<form[^>]*multipart\/form-data[^>]*><input type="hidden" name="_csrf"/);
+    const script = await get('/admin/assets/tip-editor.js', session);
+    assert.equal(script.status, 200);
+    assert.match(script.headers.get('content-type'), /javascript/);
+    assert.match(await script.text(), /event\.preventDefault\(\)/);
+    const ajaxForm = new FormData();
+    ajaxForm.set('_csrf', csrf);
+    ajaxForm.set('image', new Blob([Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLytAAAAABJRU5ErkJggg==',
+      'base64')], { type: 'image/png' }), 'second.png');
+    const ajaxUpload = await fetch(base + '/admin/tips/images', {
+      method: 'POST', redirect: 'manual',
+      headers: { cookie: session, accept: 'application/json' },
+      body: ajaxForm
+    });
+    assert.equal(ajaxUpload.status, 200);
+    assert.match((await ajaxUpload.json()).data.url,
+      /^\/api\/v1\/tips\/images\/[0-9a-f-]+\.png$/);
     assert.equal((await post('/admin/tips/' + tip.id + '/visibility', session, {
       active: 'true', _csrf: csrf
     })).status, 302);

@@ -59,11 +59,12 @@ function renderContentListPage({
     </article>`;
   };
   const upload = isTip ? `<section class="panel">
-    <div class="section-heading"><h2>上传图片</h2><p>支持 PNG、JPEG、WebP，单张不超过 2 MB。</p></div>
-    <form method="post" action="/admin/tips/images" enctype="multipart/form-data" class="upload-form">
+    <div class="section-heading"><h2>上传图片</h2><p>图片链接会插入当前正在编辑的正文。支持 PNG、JPEG、WebP，单张不超过 2 MB。</p></div>
+    <form id="tip-image-upload" method="post" action="/admin/tips/images" enctype="multipart/form-data" class="upload-form">
       <label>图片文件<input type="file" name="image" accept="image/png,image/jpeg,image/webp" required /></label>
       <button type="submit">上传图片</button>
     </form>
+    <p id="tip-image-status" class="small" role="status" aria-live="polite"></p>
     ${/^\/api\/v1\/tips\/images\/[0-9a-f-]{36}\.(png|jpg|webp)$/.test(image)
       ? `<label>将这一行插入提示正文<input readonly value="![图片](${escapeHtml(image)})" /></label>`
       : ''}
@@ -77,10 +78,10 @@ function renderContentListPage({
     ${message ? `<div class="notice">${escapeHtml(message)}</div>` : ''}
     <section class="panel">
       <div class="section-heading"><h2>新建${escapeHtml(label)}</h2>
-        <p>${isTip ? '正文支持 Markdown。图片请先上传，再将生成的图片代码插入正文。' : '可同时公开多条公告，排序由下方列表控制。'}</p></div>
+        <p>${isTip ? '正文支持 Markdown；上传图片后可继续写作。' : '可同时公开多条公告，排序由下方列表控制。'}</p></div>
       <form method="post" action="${route}" class="editor-form">
         <label>标题<input name="title" maxlength="160" required /></label>
-        <label>正文<textarea name="content" rows="${isTip ? 12 : 8}" required></textarea></label>
+        <label>正文<textarea name="content" rows="${isTip ? 12 : 8}" ${isTip ? 'data-tip-editor' : ''} required></textarea></label>
         <label class="checkbox-row"><input type="checkbox" name="active" /> 立即公开</label>
         <div><button type="submit">创建${escapeHtml(label)}</button></div>
       </form>
@@ -93,7 +94,8 @@ function renderContentListPage({
     <section class="panel">
       <div class="section-heading"><h2>待选择</h2><p>此处的内容不会在客户端显示，可继续编辑、公开或删除。</p></div>
       <div class="publication-list">${pending.map((item, index) => renderCard(item, index, pending.length)).join('') || '<p class="muted">暂无待选择内容。</p>'}</div>
-    </section>`, csrfToken);
+    </section>
+    ${isTip ? '<script src="/admin/assets/tip-editor.js" defer></script>' : ''}`, csrfToken);
 }
 
 export { renderContentListPage };
