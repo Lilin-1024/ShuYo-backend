@@ -4,6 +4,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 const ROLES = new Set(['superadmin', 'content']);
+const AUDIT_RETENTION_LIMIT = 100;
 const sessionHours = Number.parseInt(process.env.SESSION_TTL_HOURS ?? '168', 10);
 const SESSION_LIFETIME_MS = (Number.isFinite(sessionHours) && sessionHours > 0 ? sessionHours : 168) * 3600000;
 
@@ -46,9 +47,11 @@ class AdminStore {
     if (filename !== ':memory:') chmodSync(filename, 0o600);
     this.db.exec('PRAGMA foreign_keys = ON');
     this.db.exec('PRAGMA journal_mode = WAL');
+    this.db.exec('PRAGMA secure_delete = ON');
     const version = Number(this.db.prepare('PRAGMA user_version').get().user_version);
-    if (version > 1) throw new Error('Unsupported admin database version: ' + version);
+    if (version > 2) throw new Error('Unsupported admin database version: ' + version);
     if (version === 0) this.initializeSchema();
+    if (version === 1) this.migrateAuditRetention();
   }
 
   initializeSchema() {
@@ -66,8 +69,27 @@ class AdminStore {
       + " detail TEXT NOT NULL DEFAULT '', occurred_at TEXT NOT NULL) STRICT;"
       + "CREATE INDEX admin_audit_time_idx ON admin_audit(occurred_at DESC);"
       + "CREATE TRIGGER admin_audit_no_update BEFORE UPDATE ON admin_audit BEGIN SELECT RAISE(ABORT, 'audit is append-only'); END;"
-      + "CREATE TRIGGER admin_audit_no_delete BEFORE DELETE ON admin_audit BEGIN SELECT RAISE(ABORT, 'audit is append-only'); END;"
-      + "PRAGMA user_version = 1; COMMIT;");
+      + "CREATE TRIGGER admin_audit_keep_recent AFTER INSERT ON admin_audit BEGIN "
+      + `DELETE FROM admin_audit WHERE id IN (SELECT id FROM admin_audit ORDER BY occurred_at DESC, rowid DESC LIMIT -1 OFFSET ${AUDIT_RETENTION_LIMIT});`
+      + "END;"
+      + "PRAGMA user_version = 2; COMMIT;");
+  }
+
+  migrateAuditRetention() {
+    this.transaction(() => {
+      this.db.exec('DROP TRIGGER admin_audit_no_delete');
+      this.db.exec(`DELETE FROM admin_audit WHERE id IN (
+        SELECT id FROM admin_audit ORDER BY occurred_at DESC, rowid DESC
+        LIMIT -1 OFFSET ${AUDIT_RETENTION_LIMIT}
+      )`);
+      this.db.exec(`CREATE TRIGGER admin_audit_keep_recent AFTER INSERT ON admin_audit BEGIN
+        DELETE FROM admin_audit WHERE id IN (
+          SELECT id FROM admin_audit ORDER BY occurred_at DESC, rowid DESC
+          LIMIT -1 OFFSET ${AUDIT_RETENTION_LIMIT}
+        );
+      END;`);
+      this.db.exec('PRAGMA user_version = 2');
+    });
   }
 
   transaction(callback) {
@@ -208,15 +230,15 @@ class AdminStore {
     });
   }
 
-  listAudit(limit = 100) {
+  listAudit(limit = AUDIT_RETENTION_LIMIT) {
     return this.db.prepare(
       'SELECT audit.*, admins.username AS actor_name FROM admin_audit audit'
       + ' LEFT JOIN admins ON admins.id = audit.actor_id'
       + ' ORDER BY audit.occurred_at DESC, audit.rowid DESC LIMIT ?'
-    ).all(Math.min(Math.max(Number(limit) || 100, 1), 500));
+    ).all(Math.min(Math.max(Number(limit) || AUDIT_RETENTION_LIMIT, 1), AUDIT_RETENTION_LIMIT));
   }
 
   close() { this.db.close(); }
 }
 
-export { AdminStore, SESSION_LIFETIME_MS };
+export { AdminStore, AUDIT_RETENTION_LIMIT, SESSION_LIFETIME_MS };

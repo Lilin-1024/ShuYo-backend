@@ -579,6 +579,7 @@ function renderAuditPage({ entries, admin, csrfToken }) {
   </tr>`).join('');
   return shell('操作记录', `${adminNav('audit', admin)}
     <h1 class="title">操作记录</h1>
+    <p class="subtitle">仅保留最近 100 条。</p>
     <div class="table-wrap"><table class="table">
       <thead><tr><th>时间</th><th>操作者</th><th>动作</th><th>目标</th><th>说明</th></tr></thead>
       <tbody>${rows}</tbody>
