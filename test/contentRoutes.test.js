@@ -74,6 +74,10 @@ test('public announcements and tips, ordering, deletion, markdown and image boun
     assert.ok(publicHeading >= 0 && pendingHeading > publicHeading);
     assert.ok(managementHtml.indexOf('第一条已改', publicHeading) < pendingHeading);
     assert.ok(managementHtml.indexOf('第二条', pendingHeading) > pendingHeading);
+    assert.ok(!managementHtml.slice(publicHeading, pendingHeading)
+      .includes(`/admin/announcements/${first.id}/delete`));
+    assert.ok(managementHtml.slice(pendingHeading)
+      .includes(`/admin/announcements/${second.id}/delete`));
     assert.equal((await post('/admin/announcements/' + first.id + '/delete', session, {
       _csrf: csrf
     })).status, 409);
