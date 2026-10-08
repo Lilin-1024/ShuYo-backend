@@ -1,8 +1,11 @@
 import crypto from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import multer from 'multer';
 
 import {
   createAdminAuth
@@ -11,6 +14,10 @@ import { AdminStore } from './adminStore.js';
 import { createRateLimit } from './rateLimit.js';
 import { fetchSchoolStudentId, maskedStudentId } from './identityProbe.js';
 import { StudentIdentityStore } from './studentIdentityStore.js';
+import {
+  imageType, latestAnnouncement, moveItem, nextSortOrder, ordered,
+  publicItems, renderTipMarkdown, validateTipMarkdown
+} from './publishedContent.js';
 import { dataDir, hashToken, makeId, mutateState, nowIso, readState } from './store.js';
 import {
   initializeWebVpnMonitor,
@@ -20,7 +27,6 @@ import {
   renderAccountPage,
   renderAdminListPage,
   renderAuditPage,
-  renderAnnouncementListPage,
   renderDashboard,
   renderFeedbackDetail,
   renderFeedbackListPage,
@@ -29,6 +35,7 @@ import {
   renderStudentListPage,
   renderStudentRevealPage
 } from './views.js';
+import { renderContentListPage } from './contentViews.js';
 
 if (process.env.NODE_ENV === 'production') {
   for (const name of ['COOKIE_SECRET', 'PRESENCE_HMAC_SECRET']) {
@@ -53,6 +60,24 @@ const studentIdentityStore = new StudentIdentityStore({
   hmacSecret: process.env.STUDENT_ID_HMAC_SECRET,
   encryptionKey: process.env.STUDENT_ID_ENCRYPTION_KEY
 });
+const tipImageDir = path.join(dataDir, 'tip-images');
+const tipImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 2, parts: 3 }
+});
+const tipImageRateLimit = createRateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  message: '图片上传过于频繁，请稍后再试。'
+});
+
+function receiveTipImage(req, res, next) {
+  tipImageUpload.single('image')(req, res, (error) => {
+    if (!error) { next(); return; }
+    res.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400)
+      .type('text').send('图片上传失败，请检查文件大小和格式。');
+  });
+}
 
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
@@ -213,11 +238,7 @@ function presenceStats(state) {
 }
 
 function selectLatestAnnouncement(announcements) {
-  const active = announcements
-    .filter((item) => item.active !== false)
-    .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
-
-  return active[0] ?? null;
+  return latestAnnouncement(announcements);
 }
 
 function publicAnnouncement(item) {
@@ -290,6 +311,14 @@ function adminRedirectWithMessage(res, path, message) {
   const safePath = String(path ?? '').startsWith('/admin') ? String(path) : '/admin';
   const separator = safePath.includes('?') ? '&' : '?';
   res.redirect(`${safePath}${separator}message=${encodeURIComponent(message)}`);
+}
+
+function contentRouteError(error, res, next) {
+  if (error instanceof Error && /^(标题|正文|提示正文|图片)/.test(error.message)) {
+    res.status(400).type('text').send(error.message);
+  } else {
+    next(error);
+  }
 }
 
 async function getFeedbackById(id) {
@@ -397,6 +426,40 @@ app.get('/api/v1/announcements/latest', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+app.get('/api/v1/announcements', async (req, res, next) => {
+  try {
+    const state = await readState();
+    sendCachedJson(req, res, {
+      success: true,
+      data: publicItems(state.announcements).map(publicAnnouncement)
+    }, 0);
+  } catch (error) { next(error); }
+});
+
+app.get('/api/v1/tips', async (req, res, next) => {
+  try {
+    const state = await readState();
+    sendCachedJson(req, res, {
+      success: true,
+      data: publicItems(state.tips).map(({ id, title, content, createdAt, updatedAt }) =>
+        ({ id, title, content, createdAt, updatedAt }))
+    }, 0);
+  } catch (error) { next(error); }
+});
+
+app.get('/api/v1/tips/images/:filename', (req, res) => {
+  const filename = String(req.params.filename ?? '');
+  if (!/^[0-9a-f-]{36}\.(png|jpg|webp)$/.test(filename)) {
+    res.status(404).end();
+    return;
+  }
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.sendFile(filename, { root: tipImageDir }, (error) => {
+    if (error && !res.headersSent) res.status(error.statusCode ?? 404).end();
+  });
 });
 
 app.get('/api/v1/service-status/webvpn', (req, res) => {
@@ -573,6 +636,10 @@ app.get('/api/v1/feedback/:id', async (req, res, next) => {
 
 app.use('/admin', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
+  if (req.method === 'POST' && req.path === '/tips/images') {
+    requireAdmin(req, res, next);
+    return;
+  }
   if (req.method === 'POST' && req.path !== '/login') {
     requireAdmin(req, res, () => requireCsrf(req, res, next));
     return;
@@ -728,7 +795,7 @@ app.get('/admin', requireAdmin, async (req, res, next) => {
   try {
     const state = await readState();
     const feedbackItems = [...state.feedback].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    const announcementItems = [...state.announcements].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    const announcementItems = ordered(state.announcements.filter((item) => !item.deletedAt));
     const presence = presenceStats(state);
 
     res.status(200).send(
@@ -762,6 +829,127 @@ app.get('/admin/version', requireAdmin, async (req, res, next) => {
   }
 });
 
+function registerContentRoutes(route, key, label) {
+  const auditName = key === 'tips' ? 'tip' : 'announcement';
+  app.get(route, requireAdmin, async (req, res, next) => {
+    try {
+      const state = await readState();
+      res.send(renderContentListPage({
+        kind: key, label,
+        items: ordered(state[key].filter((item) => !item.deletedAt)),
+        message: trimText(req.query.message ?? ''),
+        image: key === 'tips' ? trimText(req.query.image ?? '') : '',
+        csrfToken: res.locals.csrfToken,
+        admin: req.admin,
+        renderMarkdown: renderTipMarkdown
+      }));
+    } catch (error) { next(error); }
+  });
+
+  app.post(route, requireAdmin, async (req, res, next) => {
+    try {
+      const title = trimText(req.body.title);
+      const content = trimText(req.body.content);
+      const active = isTruthy(req.body.active);
+      if (!title || !content) { res.status(400).send('标题和正文不能为空。'); return; }
+      validateLength(title, 160, '标题');
+      validateLength(content, key === 'tips' ? 12000 : 4000, '正文');
+      if (key === 'tips') validateTipMarkdown(content);
+      const id = makeId(key === 'tips' ? 'tip' : 'ann');
+      await mutateState((state) => {
+        state[key].unshift({
+          id, title, content, active,
+          sortOrder: nextSortOrder(state[key]),
+          createdAt: nowIso(), updatedAt: nowIso()
+        });
+      });
+      adminStore.audit(req.admin.id, `${auditName}.create`, auditName, id, active ? 'public' : 'private');
+      adminRedirectWithMessage(res, route, `${label}已创建。`);
+    } catch (error) { contentRouteError(error, res, next); }
+  });
+
+  app.post(`${route}/:id/edit`, requireAdmin, async (req, res, next) => {
+    try {
+      const title = trimText(req.body.title);
+      const content = trimText(req.body.content);
+      if (!title || !content) { res.status(400).send('标题和正文不能为空。'); return; }
+      validateLength(title, 160, '标题');
+      validateLength(content, key === 'tips' ? 12000 : 4000, '正文');
+      if (key === 'tips') validateTipMarkdown(content);
+      const updated = await mutateState((state) => {
+        const item = state[key].find((entry) => entry.id === req.params.id && !entry.deletedAt);
+        if (!item) return false;
+        item.title = title;
+        item.content = content;
+        item.updatedAt = nowIso();
+        return true;
+      });
+      if (!updated) { res.status(404).send('内容不存在。'); return; }
+      adminStore.audit(req.admin.id, `${auditName}.edit`, auditName, req.params.id);
+      adminRedirectWithMessage(res, route, `${label}已保存。`);
+    } catch (error) { contentRouteError(error, res, next); }
+  });
+
+  app.post(`${route}/:id/visibility`, requireAdmin, async (req, res, next) => {
+    try {
+      const active = isTruthy(req.body.active);
+      const updated = await mutateState((state) => {
+        const item = state[key].find((entry) => entry.id === req.params.id && !entry.deletedAt);
+        if (!item) return false;
+        item.active = active;
+        item.updatedAt = nowIso();
+        return true;
+      });
+      if (!updated) { res.status(404).send('内容不存在。'); return; }
+      adminStore.audit(req.admin.id, `${auditName}.visibility`, auditName, req.params.id, active ? 'public' : 'private');
+      adminRedirectWithMessage(res, route, active ? '已公开。' : '已设为不公开。');
+    } catch (error) { next(error); }
+  });
+
+  app.post(`${route}/:id/move`, requireAdmin, async (req, res, next) => {
+    try {
+      const direction = trimText(req.body.direction);
+      if (!['up', 'down'].includes(direction)) { res.status(400).send('排序方向无效。'); return; }
+      const moved = await mutateState((state) => moveItem(state[key], req.params.id, direction));
+      if (!moved) { res.status(400).send('无法移动到该位置。'); return; }
+      adminStore.audit(req.admin.id, `${auditName}.move`, auditName, req.params.id, direction);
+      adminRedirectWithMessage(res, route, '顺序已调整。');
+    } catch (error) { next(error); }
+  });
+
+  app.post(`${route}/:id/delete`, requireAdmin, async (req, res, next) => {
+    try {
+      const deleted = await mutateState((state) => {
+        const item = state[key].find((entry) => entry.id === req.params.id && !entry.deletedAt);
+        if (!item) return false;
+        item.deletedAt = nowIso();
+        item.active = false;
+        return true;
+      });
+      if (!deleted) { res.status(404).send('内容不存在。'); return; }
+      adminStore.audit(req.admin.id, `${auditName}.delete`, auditName, req.params.id);
+      adminRedirectWithMessage(res, route, `${label}已删除。`);
+    } catch (error) { next(error); }
+  });
+}
+
+registerContentRoutes('/admin/announcements', 'announcements', '公告');
+registerContentRoutes('/admin/tips', 'tips', '使用提示');
+
+app.post('/admin/tips/images', requireAdmin, tipImageRateLimit, receiveTipImage, requireCsrf,
+  async (req, res, next) => {
+    try {
+      if (!req.file) { res.status(400).send('请选择图片。'); return; }
+      const extension = imageType(req.file.buffer);
+      if (!extension) { res.status(400).send('只支持 PNG、JPEG 或 WebP 图片。'); return; }
+      await mkdir(tipImageDir, { recursive: true });
+      const filename = `${crypto.randomUUID()}.${extension}`;
+      await writeFile(path.join(tipImageDir, filename), req.file.buffer, { flag: 'wx', mode: 0o600 });
+      adminStore.audit(req.admin.id, 'tips.image_upload', 'tip_image', filename);
+      res.redirect('/admin/tips?image=' + encodeURIComponent(`/api/v1/tips/images/${filename}`));
+    } catch (error) { next(error); }
+  });
+
 app.get('/admin/feedback', requireAdmin, async (req, res, next) => {
   try {
     const state = await readState();
@@ -771,25 +959,6 @@ app.get('/admin/feedback', requireAdmin, async (req, res, next) => {
       renderFeedbackListPage({
         state,
         feedbackItems,
-        message: trimText(req.query.message ?? ''),
-        csrfToken: res.locals.csrfToken,
-        admin: req.admin
-      })
-    );
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.get('/admin/announcements', requireAdmin, async (req, res, next) => {
-  try {
-    const state = await readState();
-    const announcementItems = [...state.announcements].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-
-    res.status(200).send(
-      renderAnnouncementListPage({
-        state,
-        announcementItems,
         message: trimText(req.query.message ?? ''),
         csrfToken: res.locals.csrfToken,
         admin: req.admin
@@ -835,89 +1004,6 @@ app.post('/admin/version', requireAdmin, async (req, res, next) => {
     adminStore.audit(req.admin.id, 'version.update', 'version', 'current');
 
     res.redirect('/admin/version?message=' + encodeURIComponent('版本设置已保存。'));
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.post('/admin/announcements', requireAdmin, async (req, res, next) => {
-  try {
-    const title = trimText(req.body.title ?? '');
-    const content = trimText(req.body.content ?? '');
-    const active = isTruthy(req.body.active);
-    const returnTo = trimText(req.body.returnTo ?? '/admin/announcements');
-
-    if (!title || !content) {
-      res.status(400).send('公告标题和内容不能为空。');
-      return;
-    }
-
-    validateLength(title, 160, '标题');
-    validateLength(content, 4000, '内容');
-    const announcementId = makeId('ann');
-
-    await mutateState((state) => {
-      if (active) {
-        state.announcements = state.announcements.map((item) => ({
-          ...item,
-          active: false
-        }));
-      }
-
-      state.announcements.unshift({
-        id: announcementId,
-        title,
-        content,
-        active,
-        createdAt: nowIso(),
-        updatedAt: nowIso()
-      });
-    });
-    adminStore.audit(req.admin.id, 'announcement.create', 'announcement', announcementId,
-      active ? 'active' : 'inactive');
-
-    adminRedirectWithMessage(res, returnTo, '公告已发布。');
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.post('/admin/announcements/:id/active', requireAdmin, async (req, res, next) => {
-  try {
-    const announcementId = trimText(req.params.id ?? '');
-    const active = isTruthy(req.body.active);
-    const returnTo = trimText(req.body.returnTo ?? '/admin/announcements');
-
-    const updated = await mutateState((state) => {
-      const item = state.announcements.find((announcement) => announcement.id === announcementId);
-      if (!item) {
-        return false;
-      }
-
-      if (active) {
-        const updatedAt = nowIso();
-        state.announcements = state.announcements.map((announcement) => ({
-          ...announcement,
-          active: announcement.id === announcementId,
-          updatedAt:
-            announcement.id === announcementId ? updatedAt : announcement.updatedAt
-        }));
-      } else {
-        item.active = false;
-        item.updatedAt = nowIso();
-      }
-
-      return true;
-    });
-
-    if (!updated) {
-      res.status(404).send('未找到公告。');
-      return;
-    }
-    adminStore.audit(req.admin.id, 'announcement.visibility', 'announcement', announcementId,
-      active ? 'active' : 'inactive');
-
-    adminRedirectWithMessage(res, returnTo, active ? '公告已启用。' : '公告已关闭。');
   } catch (error) {
     next(error);
   }

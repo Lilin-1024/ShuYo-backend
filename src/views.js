@@ -68,11 +68,11 @@ function shell(title, body, csrfToken = '') {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 16px;
-      margin-bottom: 12px;
+      gap: 24px;
+      margin-bottom: 28px;
     }
     .title {
-      font-size: 24px;
+      font-size: 28px;
       font-weight: 700;
       margin: 0;
     }
@@ -108,16 +108,16 @@ function shell(title, body, csrfToken = '') {
     }
     .card {
       background: var(--panel);
-      border: 0;
+      border: 1px solid var(--line);
       border-radius: 0;
-      padding: 0;
-      margin-bottom: 18px;
+      padding: 24px;
+      margin-bottom: 24px;
       box-shadow: none;
     }
     .grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
+      gap: 22px;
     }
     .grid-3 {
       display: grid;
@@ -126,11 +126,12 @@ function shell(title, body, csrfToken = '') {
     }
     label {
       display: block;
-      font-size: 13px;
-      color: var(--muted);
-      margin-bottom: 6px;
+      font-size: 14px;
+      color: var(--text);
+      margin-bottom: 12px;
     }
     input[type="text"],
+    input:not([type]),
     input[type="number"],
     input[type="password"],
     textarea,
@@ -138,7 +139,7 @@ function shell(title, body, csrfToken = '') {
       width: 100%;
       border: 1px solid #b8c5d1;
       border-radius: 0;
-      padding: 8px 6px;
+      padding: 10px 12px;
       font: inherit;
       background: var(--input);
       color: var(--text);
@@ -156,19 +157,20 @@ function shell(title, body, csrfToken = '') {
     .stats {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 0;
+      gap: 16px;
     }
     .stats-card {
       background: var(--panel);
-      border: 0;
+      border: 1px solid var(--line);
       border-radius: 0;
-      margin-bottom: 22px;
+      margin-bottom: 24px;
+      padding: 24px;
       overflow: hidden;
       box-shadow: none;
     }
     .stat {
       border-right: 0;
-      padding: 0 20px 0 0;
+      padding: 0 12px 0 0;
     }
     .stat:last-child {
       border-right: 0;
@@ -180,8 +182,11 @@ function shell(title, body, csrfToken = '') {
       margin-top: 8px;
     }
     .muted { color: var(--muted); }
-    .version-form { display: grid; grid-template-columns: 1fr; gap: 12px; max-width: 760px; }
-    .version-form .grid { grid-template-columns: 1fr; gap: 12px; }
+    .version-form { display: grid; grid-template-columns: 1fr; gap: 20px; max-width: 820px; }
+    .version-form .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    .version-form label { margin: 0; font-weight: 600; }
+    .version-form label input, .version-form label select { display: block; margin-top: 8px; }
+    .version-form button { justify-self: start; min-width: 116px; min-height: 42px; }
     .table {
       width: 100%;
       border-collapse: collapse;
@@ -248,16 +253,53 @@ function shell(title, body, csrfToken = '') {
     .nav form { margin: 0; }
     .nav button { background: transparent; color: var(--muted); padding: 0; }
     .admin-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; border-bottom: 1px solid var(--line); padding: 14px 0; }
-    .admin-row form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .admin-row form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 10px; }
+    .admin-row button { min-height: 39px; }
     .admin-row select, .admin-row input { width: auto; max-width: 240px; }
     .admin-row .mono { font-size: 12px; }
     .table-wrap { overflow-x: auto; }
+    .content-header { display: flex; justify-content: space-between; align-items: end; gap: 20px; margin: 24px 0 32px; }
+    .content-header h1 { font-size: 32px; margin: 0 0 8px; color: var(--accent); }
+    .content-header p { color: var(--muted); margin: 0; }
+    .eyebrow { color: var(--accent) !important; font-size: 12px; letter-spacing: .12em; margin-bottom: 6px !important; }
+    .panel { border: 1px solid var(--line); padding: 28px; margin-bottom: 24px; background: #fff; }
+    .section-heading { margin-bottom: 22px; }
+    .section-heading h2 { margin: 0 0 6px; color: var(--text); font-size: 20px; }
+    .section-heading p { margin: 0; color: var(--muted); font-size: 14px; }
+    .editor-form { display: grid; gap: 20px; max-width: 800px; }
+    .editor-form label { color: var(--text); font-weight: 600; margin: 0; }
+    .editor-form input, .editor-form textarea { display: block; margin-top: 8px; }
+    .editor-form textarea { min-height: 160px; line-height: 1.65; }
+    .editor-form button, .upload-form button { min-width: 118px; min-height: 42px; }
+    .editor-form .checkbox-row { display: flex; align-items: center; gap: 10px; font-weight: 400; }
+    .checkbox-row input { width: 18px; height: 18px; margin: 0; }
+    .upload-form { display: flex; align-items: end; gap: 20px; flex-wrap: wrap; }
+    .upload-form label { margin: 0; }
+    .upload-form input { display: block; margin-top: 8px; }
+    .publication-list { display: grid; gap: 16px; }
+    .publication-card { border: 1px solid var(--line); padding: 22px; }
+    .publication-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+    .publication-title-row h3 { font-size: 18px; margin: 0; }
+    .publication-meta { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+    .publication-excerpt { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 120px; overflow: hidden; margin: 16px 0; }
+    .publication-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 18px 0 6px; }
+    .publication-actions form { margin: 0; }
+    .publication-actions button { min-height: 36px; }
+    button:disabled { opacity: .45; cursor: default; }
+    details { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; }
+    details summary { color: var(--accent); cursor: pointer; font-weight: 600; }
+    details .editor-form { margin-top: 20px; }
+    .publication-delete p { color: var(--muted); font-size: 13px; }
+    .markdown-preview { max-height: 230px; overflow: auto; line-height: 1.65; margin: 16px 0; }
+    .markdown-preview img { display: block; max-width: 100%; height: auto; margin: 12px 0; }
+    .markdown-preview pre { overflow: auto; background: var(--accent-soft); padding: 12px; }
     .stat .value { color: var(--accent); font-size: 28px; }
     .card, .stats-card { box-shadow: none; }
     @media (max-width: 900px) {
       .grid, .grid-3, .stats, .split {
         grid-template-columns: 1fr;
       }
+      .version-form .grid { grid-template-columns: 1fr; }
       .stat {
         border-right: 0;
         border-bottom: 1px solid var(--stat-line);
@@ -266,8 +308,12 @@ function shell(title, body, csrfToken = '') {
         border-bottom: 0;
       }
       .page { padding: 16px; }
+      .card, .stats-card { padding: 18px; }
       .nav-account { margin-left: 0; }
       .admin-row { grid-template-columns: 1fr; }
+      .content-header { align-items: start; flex-direction: column; }
+      .panel { padding: 18px; }
+      .publication-card { padding: 16px; }
     }
   </style>
 </head>
@@ -406,46 +452,18 @@ function renderBlockedFeedbackDevices(state) {
     .join('');
 }
 
-function renderAnnouncementItems(announcementItems, returnTo) {
-  if (!announcementItems.length) {
-    return '<div class="small">暂无公告。</div>';
-  }
-
-  return announcementItems
-    .map((item) => {
-      const active = item.active !== false;
-      const action = active
-        ? `<form method="post" action="/admin/announcements/${encodeURIComponent(item.id)}/active">
-            <input type="hidden" name="active" value="false" />
-            <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}" />
-            <button class="btn danger" type="submit">关闭公告</button>
-          </form>`
-        : `<form method="post" action="/admin/announcements/${encodeURIComponent(item.id)}/active">
-            <input type="hidden" name="active" value="true" />
-            <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}" />
-            <button type="submit">启用公告</button>
-          </form>`;
-
-      return `
-        <div class="item">
-          <div class="row" style="justify-content: space-between; align-items: start;">
-            <div>
-              <div style="font-weight: 600;">${escapeHtml(item.title)}</div>
-              <div class="small" style="margin-top: 4px;">${previewText(item.content, 140)}</div>
-              <div class="small" style="margin-top: 4px;">${escapeHtml(formatDateTime(item.createdAt))}</div>
-            </div>
-            <span class="badge ${active ? 'ok' : ''}">${active ? '当前启用' : '未启用'}</span>
-          </div>
-          <div class="row" style="margin-top: 10px;">
-            ${action}
-          </div>
-        </div>`;
-    })
-    .join('');
+function renderAnnouncementItems(items) {
+  if (!items.length) return '<p class="muted">暂无公告。</p>';
+  return items.map((item) => `<div class="item">
+    <strong>${escapeHtml(item.title)}</strong>
+    <span class="badge ${item.active !== false ? 'ok' : 'bad'}">${item.active !== false ? '公开' : '不公开'}</span>
+    <p class="muted">${previewText(item.content, 140)}</p>
+    <small>${escapeHtml(formatDateTime(item.createdAt))}</small>
+  </div>`).join('');
 }
 
 function adminNav(active, admin) {
-  const links = [['', '仪表盘'], ['version', '版本'], ['announcements', '公告'], ['feedback', '反馈'], ['account', '我的账号']];
+  const links = [['', '仪表盘'], ['version', '版本'], ['announcements', '公告'], ['tips', '使用提示'], ['feedback', '反馈'], ['account', '我的账号']];
   if (admin?.role === 'superadmin') links.push(['admins', '管理员'], ['students', '学生身份'], ['audit', '操作记录']);
   return `<nav class="nav" aria-label="后台导航">${links.map(([route, label]) => `<a class="${active === (route || 'dashboard') ? 'active' : ''}" href="/admin${route ? `/${route}` : ''}">${label}</a>`).join('')}<span class="nav-account">${escapeHtml(admin?.username ?? '')}</span><form method="post" action="/admin/logout"><button type="submit">退出</button></form></nav>`;
 }
@@ -630,7 +648,29 @@ function renderDashboard({
 function renderVersionPage({ state, message = '', csrfToken = '', admin }) {
   const meta = state.meta;
   const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
-  return shell('版本设置', `${adminNav('version', admin)}${notice}<div class="card"><h1 class="title">版本设置</h1><form class="version-form" method="post" action="/admin/version"><div class="grid"><div><label>应用名称</label><input name="appName" value="${escapeHtml(meta.appName)}" /></div><div><label>下载地址</label><input name="downloadUrl" value="${escapeHtml(meta.downloadUrl)}" /></div><div><label>最新版本号</label><input name="latestVersion" value="${escapeHtml(meta.latestVersion)}" required /></div><div><label>Build 号</label><input name="latestBuild" type="number" min="1" value="${escapeHtml(meta.latestBuild)}" required /></div><div><label>更新标题</label><input name="updateTitle" value="${escapeHtml(meta.updateTitle)}" /></div><div><label>强制更新</label><select name="forceUpdate"><option value="false"${meta.forceUpdate ? '' : ' selected'}>否</option><option value="true"${meta.forceUpdate ? ' selected' : ''}>是</option></select></div></div><label>更新说明</label><textarea name="updateMessage">${escapeHtml(meta.updateMessage)}</textarea><label>弹窗通告</label><textarea name="noticeText">${escapeHtml(meta.noticeText)}</textarea><button type="submit">保存</button></form></div>`, csrfToken);
+  return shell('版本设置', `${adminNav('version', admin)}
+    <header class="content-header">
+      <div><p class="eyebrow">应用管理</p><h1>版本设置</h1><p>更新应用版本和启动提示。</p></div>
+    </header>
+    ${notice}
+    <section class="panel">
+      <form class="version-form" method="post" action="/admin/version">
+        <div class="grid">
+          <label>应用名称<input name="appName" value="${escapeHtml(meta.appName)}" /></label>
+          <label>最新版本号<input name="latestVersion" value="${escapeHtml(meta.latestVersion)}" required /></label>
+          <label>Build 号<input name="latestBuild" type="number" min="1" value="${escapeHtml(meta.latestBuild)}" required /></label>
+          <label>下载地址<input name="downloadUrl" value="${escapeHtml(meta.downloadUrl)}" /></label>
+          <label>更新标题<input name="updateTitle" value="${escapeHtml(meta.updateTitle)}" /></label>
+          <label>强制更新<select name="forceUpdate">
+            <option value="false"${meta.forceUpdate ? '' : ' selected'}>否</option>
+            <option value="true"${meta.forceUpdate ? ' selected' : ''}>是</option>
+          </select></label>
+        </div>
+        <label>更新说明<textarea name="updateMessage">${escapeHtml(meta.updateMessage)}</textarea></label>
+        <label>弹窗通告<textarea name="noticeText">${escapeHtml(meta.noticeText)}</textarea></label>
+        <button type="submit">保存版本设置</button>
+      </form>
+    </section>`, csrfToken);
 }
 
 function renderFeedbackListPage({ state, feedbackItems, message = '', csrfToken = '', admin }) {
@@ -657,54 +697,6 @@ function renderFeedbackListPage({ state, feedbackItems, message = '', csrfToken 
       <p class="subtitle">命中的客户端将无法继续提交问题反馈。</p>
       <div class="item-list">
         ${renderBlockedFeedbackDevices(state)}
-      </div>
-    </div>`,
-    csrfToken
-  );
-}
-
-function renderAnnouncementListPage({ state, announcementItems, message = '', csrfToken = '', admin }) {
-  const notice = message ? `<div class="notice">${escapeHtml(message)}</div>` : '';
-  const activeCount = announcementItems.filter((item) => item.active !== false).length;
-
-  return shell(
-    '公告列表',
-    `${adminNav('announcements', admin)}<div class="topbar">
-      <div>
-        <h1 class="title">公告列表</h1>
-        <div class="subtitle"><a href="/admin">返回后台</a> · 共 ${announcementItems.length} 条，${activeCount} 条启用中</div>
-      </div>
-
-    </div>
-    ${notice}
-    <div class="split">
-      <div class="card">
-        <h2 class="title" style="font-size: 20px;">发布公告</h2>
-        <form method="post" action="/admin/announcements">
-          <input type="hidden" name="returnTo" value="/admin/announcements" />
-          <label for="announcementTitle">公告标题</label>
-          <input id="announcementTitle" name="title" type="text" required />
-          <div style="margin-top: 12px;">
-            <label for="announcementContent">公告内容</label>
-            <textarea id="announcementContent" name="content" required></textarea>
-          </div>
-          <div class="row" style="margin-top: 12px;">
-            <label style="margin: 0; display: flex; align-items: center; gap: 8px;">
-              <input type="checkbox" name="active" checked />
-              启用为当前公告
-            </label>
-          </div>
-          <div style="margin-top: 12px;">
-            <button type="submit">发布公告</button>
-          </div>
-        </form>
-      </div>
-
-      <div class="card">
-        <h2 class="title" style="font-size: 20px;">全部公告</h2>
-        <div style="margin-top: 8px;">
-          ${renderAnnouncementItems(announcementItems, '/admin/announcements')}
-        </div>
       </div>
     </div>`,
     csrfToken
@@ -816,9 +808,9 @@ function renderFeedbackDetail({ state, item, message = '', csrfToken = '', admin
 }
 
 export {
+  adminNav,
   escapeHtml,
   formatDateTime,
-  renderAnnouncementListPage,
   renderAccountPage,
   renderAdminListPage,
   renderAuditPage,

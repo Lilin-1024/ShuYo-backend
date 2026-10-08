@@ -35,6 +35,7 @@ function defaultState() {
   return {
     meta: defaultMeta(),
     announcements: [],
+    tips: [],
     feedback: [],
     blockedFeedbackDevices: [],
     presence: {}
@@ -79,13 +80,14 @@ function normalizeState(raw) {
   meta.updatedAt = meta.updatedAt ?? defaults.meta.updatedAt;
 
   const announcements = Array.isArray(raw?.announcements) ? raw.announcements : [];
+  const tips = Array.isArray(raw?.tips) ? raw.tips : [];
   const feedback = Array.isArray(raw?.feedback) ? raw.feedback : [];
   const blockedFeedbackDevices = normalizeBlockedFeedbackDevices(raw?.blockedFeedbackDevices);
   const presence = raw?.presence && typeof raw.presence === 'object' && !Array.isArray(raw.presence)
     ? raw.presence
     : {};
 
-  return { meta, announcements, feedback, blockedFeedbackDevices, presence };
+  return { meta, announcements, tips, feedback, blockedFeedbackDevices, presence };
 }
 
 async function ensureStorage() {
@@ -93,8 +95,12 @@ async function ensureStorage() {
 
   try {
     await readFile(dbPath, 'utf8');
-  } catch {
-    await saveState(defaultState());
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      await saveState(defaultState());
+      return;
+    }
+    throw error;
   }
 }
 
@@ -106,10 +112,13 @@ async function readState() {
       return defaultState();
     }
     return normalizeState(JSON.parse(raw));
-  } catch {
-    const defaults = defaultState();
-    await saveState(defaults);
-    return defaults;
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      const defaults = defaultState();
+      await saveState(defaults);
+      return defaults;
+    }
+    throw error;
   }
 }
 
