@@ -26,3 +26,6 @@ data/*
 runtime/
 backups/
 .DS_Store
+
+# Markdown notes are kept only in local working copies.
+*.md
