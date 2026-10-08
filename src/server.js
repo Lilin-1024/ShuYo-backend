@@ -15,6 +15,7 @@ import { AdminStore } from './adminStore.js';
 import { createRateLimit } from './rateLimit.js';
 import { fetchSchoolStudentId, maskedStudentId } from './identityProbe.js';
 import { StudentIdentityStore } from './studentIdentityStore.js';
+import { ShareStore } from './shareStore.js';
 import { EngagementStore } from './engagementStore.js';
 import { startTipImageCleanup } from './tipImageCleanup.js';
 import {
@@ -66,6 +67,11 @@ const studentIdentityStore = new StudentIdentityStore({
 const engagementStore = new EngagementStore({
   filename: `${dataDir}/engagement.sqlite`,
   hmacSecret: process.env.PRESENCE_HMAC_SECRET ?? process.env.COOKIE_SECRET
+});
+const shareStore = new ShareStore({
+  filename: `${dataDir}/shares.sqlite`,
+  encryptionKey: process.env.SHARE_DATA_KEY ??
+    (process.env.NODE_ENV === 'test' ? process.env.STUDENT_ID_ENCRYPTION_KEY : undefined)
 });
 const tipImageDir = path.join(dataDir, 'tip-images');
 const tipEditorScript = fileURLToPath(new URL('./adminTipEditor.js', import.meta.url));
@@ -126,12 +132,13 @@ app.use(
   )
 );
 app.use(cookieParser(process.env.COOKIE_SECRET ?? 'change-this-cookie-secret'));
-app.use(express.json({ limit: '64kb' }));
+app.use(express.json({ limit: '192kb' }));
 app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 // Body-parser errors may contain the raw request body. Never print a school
 // session value, even when a malformed identity request cannot reach its route.
 app.use((error, req, res, next) => {
-  if (!req.path.startsWith('/api/v1/student/') && !req.path.startsWith('/admin')) return next(error);
+  if (!req.path.startsWith('/api/v1/student/') &&
+      !req.path.startsWith('/api/v1/shares/') && !req.path.startsWith('/admin')) return next(error);
   res.setHeader('Cache-Control', 'no-store');
   if (req.path.startsWith('/admin')) {
     res.status(400).type('text').send('请求格式无效。');
@@ -161,6 +168,19 @@ const studentFeedbackRateLimit = createRateLimit({
   windowMs: 10 * 60 * 1000, max: 10,
   keyFn: (req) => req.studentSession.account_id,
   message: '反馈操作过于频繁，请稍后再试。'
+});
+const shareCreateRateLimit = createRateLimit({
+  windowMs: 10 * 60 * 1000, max: 10,
+  keyFn: (req) => req.studentSession.account_id,
+  message: '分享操作过于频繁，请稍后再试。'
+});
+const shareResolveRateLimit = createRateLimit({
+  windowMs: 60 * 1000, max: 10,
+  message: '分享码尝试过于频繁，请稍后再试。'
+});
+const shareResolveGlobalRateLimit = createRateLimit({
+  windowMs: 60 * 1000, max: 100, keyFn: () => 'all',
+  message: '分享码服务繁忙，请稍后再试。'
 });
 
 const loginRateLimit = createRateLimit({
@@ -389,9 +409,51 @@ app.post('/api/v1/student/sessions/revoke-all', requireStudentSession, (req, res
 });
 
 app.delete('/api/v1/student/account', requireStudentSession, (req, res) => {
+  shareStore.deleteAccount(req.studentSession.account_id);
   engagementStore.deleteAccount(req.studentSession.account_id);
   studentIdentityStore.deleteAccount(req.studentSession.account_id);
   res.status(204).end();
+});
+
+app.get('/api/v1/student/shares/current', requireStudentSession, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, data: shareStore.current(req.studentSession.account_id) });
+});
+
+app.post('/api/v1/student/shares', requireStudentSession, shareCreateRateLimit, (req, res) => {
+  try {
+    if (typeof req.body?.includeNote !== 'boolean') throw new Error('备注选项无效。');
+    const result = shareStore.create(req.studentSession.account_id,
+      req.body?.requestId, req.body?.snapshot, req.body.includeNote);
+    if (result.error === 'daily_limit') {
+      res.status(429).json({ success: false, error: '今天已生成 4 次分享码。' });
+      return;
+    }
+    if (result.error === 'superseded') {
+      res.status(409).json({ success: false, error: '该次生成的分享码已被后续操作替换。' });
+      return;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(result.reusedRequest ? 200 : 201).json({ success: true, data: result });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error instanceof Error ? error.message : '课表格式无效。' });
+  }
+});
+
+app.delete('/api/v1/student/shares/current', requireStudentSession, (req, res) => {
+  shareStore.destroy(req.studentSession.account_id);
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(204).end();
+});
+
+app.post('/api/v1/shares/resolve', shareResolveRateLimit, shareResolveGlobalRateLimit, (req, res) => {
+  const result = shareStore.resolve(req.body?.code);
+  res.setHeader('Cache-Control', 'no-store');
+  if (!result) {
+    res.status(404).json({ success: false, error: '分享码无效或已失效。' });
+    return;
+  }
+  res.json({ success: true, data: result });
 });
 
 app.get('/api/v1/version', async (req, res, next) => {
@@ -1241,6 +1303,9 @@ app.use((error, req, res, next) => {
 
 if (process.env.NODE_ENV !== 'test') {
   await initializeWebVpnMonitor();
+  shareStore.cleanup();
+  const shareCleanupTimer = setInterval(() => shareStore.cleanup(), 24 * 60 * 60 * 1000);
+  shareCleanupTimer.unref();
   startTipImageCleanup({
     directory: tipImageDir,
     loadTips: async () => (await readState()).tips,
@@ -1250,4 +1315,4 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-export { app, adminStore, studentIdentityStore, engagementStore };
+export { app, adminStore, studentIdentityStore, engagementStore, shareStore };
