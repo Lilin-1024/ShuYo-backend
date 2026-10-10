@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -105,6 +106,47 @@ test('deleting an account removes its student ID and every device session', () =
     assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM student_audit').get().n, 0);
   } finally {
     store.close();
+  }
+});
+
+test('school verified deletion works after all device sessions were revoked', () => {
+  const store = createStore();
+  try {
+    const now = new Date('2026-10-07T08:00:00Z');
+    const session = store.createSession({ studentId: '23123456', now });
+    store.revokeAllSessions(session.accountId, now);
+    assert.equal(store.getSession(session.token, now), null);
+    const grant = store.createDeletionGrant('23123456', now);
+    assert.equal(grant.maskedStudentId, '23****56');
+    assert.equal(store.accountForDeletionGrant(grant.token, now), session.accountId);
+    assert.equal(store.accountForDeletionGrant(grant.token,
+      new Date(now.getTime() + 5 * 60 * 1000)), null);
+    assert.equal(store.deleteAccount(session.accountId), true);
+    assert.equal(store.accountForDeletionGrant(grant.token, now), null);
+    assert.equal(store.getStudentId(session.accountId), null);
+  } finally {
+    store.close();
+  }
+});
+
+test('existing identity database upgrades to support deletion grants', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'shuyo-identity-migration-'));
+  const filename = path.join(directory, 'accounts.sqlite');
+  const options = { filename, hmacSecret: '11'.repeat(32), encryptionKey: '22'.repeat(32) };
+  try {
+    const first = new StudentIdentityStore(options);
+    const session = first.createSession({ studentId: '23123456' });
+    first.close();
+    const old = new DatabaseSync(filename);
+    old.exec('DROP TABLE student_deletion_grants; PRAGMA user_version = 1');
+    old.close();
+    const upgraded = new StudentIdentityStore(options);
+    assert.equal(upgraded.db.prepare('PRAGMA user_version').get().user_version, 2);
+    assert.equal(upgraded.getSession(session.token)?.account_id, session.accountId);
+    assert.ok(upgraded.createDeletionGrant('23123456'));
+    upgraded.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 

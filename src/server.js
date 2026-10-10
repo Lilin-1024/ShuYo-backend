@@ -204,7 +204,7 @@ function requireStudentSession(req, res, next) {
   const session = studentIdentityStore.getSession(studentToken(req));
   if (!session) {
     res.setHeader('Cache-Control', 'no-store');
-    res.status(401).json({ success: false, error: 'ShuYo 身份已失效，请重新核验。' });
+    res.status(401).json({ success: false, error: '认证已失效，请重新核验。' });
     return;
   }
   req.studentSession = session;
@@ -351,6 +351,11 @@ app.get('/health', (req, res) => {
 
 app.post('/api/v1/student/sessions', studentEnrollmentRateLimit, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
+  if (req.body?.userInitiated !== true) {
+    res.status(403).json({ success: false, code: 'manual_required',
+      error: '请在应用中手动发起认证。' });
+    return;
+  }
   const expectedStudentId = String(req.body?.expectedStudentId ?? '').trim().toUpperCase();
   if (!/^[A-Z0-9]{6,24}$/.test(expectedStudentId)) {
     res.status(400).json({ success: false, error: '本机学号无效。' });
@@ -408,10 +413,46 @@ app.post('/api/v1/student/sessions/revoke-all', requireStudentSession, (req, res
   res.status(204).end();
 });
 
-app.delete('/api/v1/student/account', requireStudentSession, (req, res) => {
-  shareStore.deleteAccount(req.studentSession.account_id);
-  engagementStore.deleteAccount(req.studentSession.account_id);
-  studentIdentityStore.deleteAccount(req.studentSession.account_id);
+app.post('/api/v1/student/data-deletion/verify', studentEnrollmentRateLimit, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const expectedStudentId = String(req.body?.expectedStudentId ?? '').trim().toUpperCase();
+  if (!/^[A-Z0-9]{6,24}$/.test(expectedStudentId)) {
+    res.status(400).json({ success: false, error: '学号无效。' });
+    return;
+  }
+  const identity = await fetchSchoolStudentId({ cookieHeader: req.body?.schoolCookie });
+  if (identity.status !== 'verified') {
+    const code = {
+      invalid_cookie: 400, session_expired: 401, school_rejected: 403, no_student_id: 422
+    }[identity.status] ?? 503;
+    res.status(code).json({ success: false, code: identity.status,
+      error: '暂时无法通过学校核实学号。' });
+    return;
+  }
+  if (identity.studentId.toUpperCase() !== expectedStudentId) {
+    res.status(409).json({ success: false, code: 'student_mismatch',
+      error: '学校返回的学号与输入的学号不一致。' });
+    return;
+  }
+  const grant = studentIdentityStore.createDeletionGrant(identity.studentId);
+  if (!grant) {
+    res.status(404).json({ success: false, code: 'no_data', error: '没有找到该学号的 ShuYo 数据。' });
+    return;
+  }
+  res.json({ success: true, data: grant });
+});
+
+app.delete('/api/v1/student/data', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const accountId = studentIdentityStore.accountForDeletionGrant(req.body?.token);
+  if (!accountId) {
+    res.status(401).json({ success: false, code: 'verification_expired',
+      error: '身份验证已过期，请重新验证。' });
+    return;
+  }
+  shareStore.deleteAccount(accountId);
+  engagementStore.deleteAccount(accountId);
+  studentIdentityStore.deleteAccount(accountId);
   res.status(204).end();
 });
 

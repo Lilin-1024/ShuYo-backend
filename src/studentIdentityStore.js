@@ -7,6 +7,7 @@ import { maskedStudentId } from './identityProbe.js';
 
 const SESSION_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_ACTIVE_SESSIONS = 10;
+const DELETION_GRANT_LIFETIME_MS = 5 * 60 * 1000;
 
 function decodeSecret(value, name) {
   if (typeof value !== 'string' || !/^[0-9a-f]{64}$/i.test(value)) {
@@ -35,8 +36,9 @@ class StudentIdentityStore {
     this.db.exec('PRAGMA foreign_keys = ON');
     this.db.exec('PRAGMA journal_mode = WAL');
     const version = Number(this.db.prepare('PRAGMA user_version').get().user_version);
-    if (version > 1) throw new Error(`Unsupported student database version: ${version}`);
+    if (version > 2) throw new Error(`Unsupported student database version: ${version}`);
     if (version === 0) this.initializeSchema();
+    if (version === 1) this.migrateDeletionGrants();
   }
 
   initializeSchema() {
@@ -71,7 +73,25 @@ class StudentIdentityStore {
         session_id TEXT,
         occurred_at TEXT NOT NULL
       ) STRICT;
-      PRAGMA user_version = 1;
+      CREATE TABLE student_deletion_grants (
+        token_hash TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES student_accounts(id) ON DELETE CASCADE,
+        expires_at TEXT NOT NULL
+      ) STRICT;
+      PRAGMA user_version = 2;
+      COMMIT;
+    `);
+  }
+
+  migrateDeletionGrants() {
+    this.db.exec(`
+      BEGIN IMMEDIATE;
+      CREATE TABLE student_deletion_grants (
+        token_hash TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES student_accounts(id) ON DELETE CASCADE,
+        expires_at TEXT NOT NULL
+      ) STRICT;
+      PRAGMA user_version = 2;
       COMMIT;
     `);
   }
@@ -241,8 +261,33 @@ class StudentIdentityStore {
     });
   }
 
+  createDeletionGrant(studentId, now = new Date()) {
+    const account = this.db.prepare('SELECT id, student_id_masked FROM student_accounts WHERE student_key = ?')
+      .get(this.studentKey(studentId));
+    if (!account) return null;
+    const token = crypto.randomBytes(32).toString('base64url');
+    const expiresAt = new Date(now.getTime() + DELETION_GRANT_LIFETIME_MS).toISOString();
+    this.transaction(() => {
+      this.db.prepare('DELETE FROM student_deletion_grants WHERE account_id = ? OR expires_at <= ?')
+        .run(account.id, now.toISOString());
+      this.db.prepare('INSERT INTO student_deletion_grants (token_hash, account_id, expires_at) VALUES (?, ?, ?)')
+        .run(tokenHash(token), account.id, expiresAt);
+    });
+    return { token, maskedStudentId: account.student_id_masked, expiresAt };
+  }
+
+  accountForDeletionGrant(token, now = new Date()) {
+    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+    const row = this.db.prepare(`
+      SELECT account_id FROM student_deletion_grants
+      WHERE token_hash = ? AND expires_at > ?
+    `).get(tokenHash(token), now.toISOString());
+    return row?.account_id ?? null;
+  }
+
   deleteAccount(accountId) {
     return this.transaction(() => {
+      this.db.prepare('DELETE FROM student_deletion_grants WHERE account_id = ?').run(accountId);
       this.db.prepare('DELETE FROM student_audit WHERE account_id = ?').run(accountId);
       this.db.prepare('DELETE FROM student_sessions WHERE account_id = ?').run(accountId);
       return Number(this.db.prepare('DELETE FROM student_accounts WHERE id = ?').run(accountId).changes) === 1;
