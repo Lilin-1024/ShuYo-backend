@@ -42,6 +42,15 @@ test('public reads, student reviews and course review feedback', async () => {
     const questions = await json(await request('/api/v1/rate/questions'));
     assert.equal(questions.questions[0].key, 'overall');
     assert.equal(questions.categories.length, 4);
+    const assignment = questions.questions[3];
+    assert.equal(assignment.key, 'assignment_type');
+    assert.equal(assignment.title, '作业/考核类型');
+    assert.equal(assignment.multiple, true);
+    assert.equal(assignment.required, false);
+    assert.deepEqual(assignment.options.map((option) => [option.key, option.label]), [
+      ['problems', '题目'], ['presentation', 'pre'], ['paper', '论文'],
+      ['group', '小组作业'], ['exam', '考试'], ['other', '其他']
+    ]);
 
     const [lookup] = await json(await request('/api/v1/rate/units/lookup', {
       method: 'POST', body: { items: [{ teachingClassId: 'S1' }] } }));
@@ -56,10 +65,16 @@ test('public reads, student reviews and course review feedback', async () => {
     assert.equal((await request('/api/v1/student/rate/reviews/u_missing', {
       method: 'PUT', token: first.token, body: { overall: 5 } })).status, 404);
     const created = await request(route, { method: 'PUT', token: first.token,
-      body: { overall: 5, answers: { grading: 'generous', attendance_method: ['qr', 'quiz'] } } });
+      body: { overall: 5, answers: {
+        grading: 'generous', attendance_method: ['qr', 'quiz'], assignment_type: ['group', 'exam']
+      } } });
     assert.equal(created.status, 201);
-    assert.equal((await request(route, { method: 'PUT', token: first.token, body: { overall: 4 } })).status, 200);
-    assert.equal((await json(await request(route, { token: first.token }))).overall, 4);
+    assert.deepEqual((await json(created)).answers.assignment_type, ['group', 'exam']);
+    assert.equal((await request(route, { method: 'PUT', token: first.token,
+      body: { overall: 4, answers: { assignment_type: ['exam', 'other'] } } })).status, 200);
+    const saved = await json(await request(route, { token: first.token }));
+    assert.equal(saved.overall, 4);
+    assert.deepEqual(saved.answers.assignment_type, ['exam', 'other']);
     assert.equal(await json(await request(route, { token: other.token })), null);
     const mine = await json(await request('/api/v1/student/rate/reviews', { token: first.token }));
     assert.equal(mine.reviews.length, 1);
@@ -68,6 +83,10 @@ test('public reads, student reviews and course review feedback', async () => {
     const unit = await json(await request(`/api/v1/rate/units/${unitId}`));
     assert.equal(unit.reviewCount, 1);
     assert.equal(unit.average, 9);
+    const assignmentStats = unit.stats.find((stat) => stat.key === 'assignment_type');
+    assert.equal(assignmentStats.title, '作业/考核类型');
+    assert.deepEqual(assignmentStats.options.filter((option) => option.count)
+      .map((option) => [option.key, option.percent]), [['exam', 100], ['other', 100]]);
     assert.equal(JSON.stringify(unit).includes(first.accountId), false);
     const course = await json(await request('/api/v1/rate/courses/TS01'));
     assert.equal(course.units.length, 2);

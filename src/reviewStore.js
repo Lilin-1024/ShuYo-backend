@@ -13,8 +13,8 @@ const QUESTIONS = [
   { key: 'attendance_method', title: '签到方式', multiple: true, options: [
     ['qr', '扫码签到'], ['location', '位置签到'], ['other_xxt', '其他学习通签到方式'],
     ['roster', '座位表/签名册'], ['quiz', '小测'], ['other', '其他']] },
-  { key: 'assignment_type', title: '作业类型', multiple: true, options: [
-    ['problems', '题目'], ['presentation', 'pre'], ['paper', '论文'], ['group', '小组作业'], ['other', '其他']] },
+  { key: 'assignment_type', title: '作业/考核类型', multiple: true, options: [
+    ['problems', '题目'], ['presentation', 'pre'], ['paper', '论文'], ['group', '小组作业'], ['exam', '考试'], ['other', '其他']] },
   { key: 'discipline', title: '纪律要求', multiple: false, options: [
     ['relaxed', '比较宽松'], ['normal', '正常要求'], ['strict', '极其严格']] },
   { key: 'interaction', title: '互动情况', multiple: false, options: [

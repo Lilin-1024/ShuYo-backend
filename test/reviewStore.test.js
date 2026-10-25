@@ -129,6 +129,65 @@ test('reviews validate answers, update summaries and produce highlighted stats',
   }
 });
 
+test('assignment assessment question keeps its key and adds exams before other', () => {
+  const store = new ReviewStore({ filename: ':memory:' });
+  try {
+    const question = store.questions()[3];
+    assert.equal(question.key, 'assignment_type');
+    assert.equal(question.title, '作业/考核类型');
+    assert.equal(question.multiple, true);
+    assert.equal(question.required, false);
+    assert.deepEqual(question.options.map((option) => [option.key, option.label]), [
+      ['problems', '题目'], ['presentation', 'pre'], ['paper', '论文'],
+      ['group', '小组作业'], ['exam', '考试'], ['other', '其他']
+    ]);
+  } finally {
+    store.close();
+  }
+});
+
+test('exam answers preserve stored assignment choices and update multi-select statistics', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'shuyo-assessment-'));
+  const filename = path.join(directory, 'reviews.sqlite');
+  let store = new ReviewStore({ filename });
+  try {
+    store.importCatalog(rows, '2026-2027-1');
+    const unit = unitOf(store, '0083A001', '张三');
+    const previous = { assignment_type: ['group', 'other'] };
+    store.saveReview('existing', unit.id, { overall: 4, answers: previous });
+    store.close();
+    store = new ReviewStore({ filename });
+
+    const assignmentStat = () => store.unit(unit.id).stats.find((stat) => stat.key === 'assignment_type');
+    assert.deepEqual(store.myReview('existing', unit.id).answers, previous);
+    assert.equal(assignmentStat().options.find((option) => option.key === 'exam')?.count, 0);
+    assert.throws(() => store.saveReview('invalid', unit.id, {
+      overall: 5, answers: { assignment_type: ['unknown'] }
+    }), /选项无效/);
+
+    store.saveReview('new', unit.id, { overall: 5, answers: { assignment_type: ['group', 'exam'] } });
+    assert.deepEqual(store.myReview('new', unit.id).answers.assignment_type, ['group', 'exam']);
+    assert.deepEqual(store.myReview('existing', unit.id).answers, previous);
+    assert.equal(assignmentStat().answered, 2);
+    assert.deepEqual(assignmentStat().options.filter((option) => option.count)
+      .map((option) => [option.key, option.count, option.percent]), [
+      ['group', 2, 100], ['exam', 1, 50], ['other', 1, 50]
+    ]);
+
+    store.saveReview('existing', unit.id, {
+      overall: 4, answers: { assignment_type: ['group', 'exam', 'other'] }
+    });
+    assert.deepEqual(store.myReview('existing', unit.id).answers.assignment_type, ['group', 'exam', 'other']);
+    assert.equal(assignmentStat().options.find((option) => option.key === 'exam').percent, 100);
+    assert.equal(store.deleteMyReview('new', unit.id), true);
+    assert.equal(assignmentStat().answered, 1);
+    assert.equal(assignmentStat().options.find((option) => option.key === 'exam').count, 1);
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('rankings use the bayesian order but expose real averages', () => {
   const store = new ReviewStore({ filename: ':memory:' });
   try {
