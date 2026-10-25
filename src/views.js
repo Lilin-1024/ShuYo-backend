@@ -478,7 +478,10 @@ function renderAnnouncementItems(items) {
 
 function adminNav(active, admin) {
   const links = [['', '仪表盘'], ['version', '版本'], ['announcements', '公告'], ['tips', '使用提示'], ['feedback', '反馈'], ['account', '我的账号']];
-  if (admin?.role === 'superadmin') links.push(['admins', '管理员'], ['students', '学生身份'], ['audit', '操作记录']);
+  if (admin?.role === 'superadmin') {
+    links.splice(5, 0, ['rate', '课评'], ['rate/feedback', '课评反馈']);
+    links.push(['admins', '管理员'], ['students', '学生身份'], ['audit', '操作记录']);
+  }
   return `<nav class="nav" aria-label="后台导航">${links.map(([route, label]) => `<a class="${active === (route || 'dashboard') ? 'active' : ''}" href="/admin${route ? `/${route}` : ''}">${label}</a>`).join('')}<span class="nav-account">${escapeHtml(admin?.username ?? '')}</span><form method="post" action="/admin/logout"><button type="submit">退出</button></form></nav>`;
 }
 

@@ -41,6 +41,7 @@ import {
   renderStudentRevealPage
 } from './views.js';
 import { renderContentListPage } from './contentViews.js';
+import { renderRateFeedbackDetail, renderRateFeedbackListPage, renderRateReviewsPage } from './rateViews.js';
 
 if (process.env.NODE_ENV === 'production') {
   for (const name of ['COOKIE_SECRET', 'PRESENCE_HMAC_SECRET']) {
@@ -1489,6 +1490,93 @@ app.post('/admin/feedback/:id/reply', requireAdmin, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+app.get('/admin/rate', requireAdmin, requireSuperadmin, (req, res) => {
+  const query = trimText(req.query.q).slice(0, 60);
+  const accountId = trimText(req.query.accountId).slice(0, 80);
+  const page = Math.max(Number.parseInt(String(req.query.page ?? '1'), 10) || 1, 1);
+  const pageSize = 50;
+  const { total, items } = reviewStore.adminReviews({
+    query, accountId, limit: pageSize, offset: (page - 1) * pageSize
+  });
+  res.send(renderRateReviewsPage({
+    reviews: items, total, page, pageSize, query, accountId,
+    blocks: reviewStore.listBlocks(), imports: reviewStore.catalogImports(),
+    questions: reviewStore.questions(), message: trimText(req.query.message),
+    csrfToken: res.locals.csrfToken, admin: req.admin
+  }));
+});
+
+app.post('/admin/rate/reviews/:id/delete', requireAdmin, requireSuperadmin, (req, res) => {
+  if (!reviewStore.adminDeleteReview(req.params.id)) {
+    res.status(404).send('未找到评价。');
+    return;
+  }
+  adminStore.audit(req.admin.id, 'rate.review.delete', 'rate_review', req.params.id);
+  adminRedirectWithMessage(res, req.body.returnTo || '/admin/rate', '评价已删除。');
+});
+
+app.post('/admin/rate/accounts/:id/block', requireAdmin, requireSuperadmin, (req, res) => {
+  const accountId = req.params.id;
+  if (!studentIdentityStore.getAccount(accountId)) {
+    res.status(404).send('学生账户不存在。');
+    return;
+  }
+  const blocked = isTruthy(req.body.blocked);
+  const purge = blocked && isTruthy(req.body.purge);
+  reviewStore.setBlocked(accountId, blocked);
+  const removed = purge ? reviewStore.purgeAccountReviews(accountId) : 0;
+  adminStore.audit(req.admin.id, 'rate.account_block', 'student_account', accountId,
+    blocked ? (purge ? `blocked, ${removed} reviews deleted` : 'blocked') : 'unblocked');
+  adminRedirectWithMessage(res, req.body.returnTo || '/admin/rate',
+    blocked ? (purge ? `账户已封禁，删除了 ${removed} 条评价。` : '账户已封禁。') : '账户已解除封禁。');
+});
+
+app.get('/admin/rate/feedback', requireAdmin, requireSuperadmin, (req, res) => {
+  const status = ['open', 'replied', 'closed'].includes(req.query.status) ? req.query.status : '';
+  res.send(renderRateFeedbackListPage({
+    items: reviewStore.listFeedback(null, status), status, kinds: reviewStore.feedbackKinds(),
+    message: trimText(req.query.message), csrfToken: res.locals.csrfToken, admin: req.admin
+  }));
+});
+
+app.get('/admin/rate/feedback/:id', requireAdmin, requireSuperadmin, (req, res) => {
+  const item = reviewStore.getFeedback(req.params.id);
+  if (!item) {
+    res.status(404).send('未找到课评反馈。');
+    return;
+  }
+  res.send(renderRateFeedbackDetail({
+    item, message: trimText(req.query.message), csrfToken: res.locals.csrfToken, admin: req.admin
+  }));
+});
+
+app.post('/admin/rate/feedback/:id/reply', requireAdmin, requireSuperadmin, (req, res) => {
+  const message = trimText(req.body.message);
+  const status = ['open', 'closed'].includes(req.body.status) ? req.body.status : 'replied';
+  if (!message || message.length > 4000) {
+    res.status(400).send('回复内容不能为空，且不能超过 4000 个字符。');
+    return;
+  }
+  if (!reviewStore.replyFeedback(req.params.id, {
+    author: req.admin.username, authorId: req.admin.id, message, status
+  })) {
+    res.status(404).send('未找到课评反馈。');
+    return;
+  }
+  adminStore.audit(req.admin.id, 'rate.feedback.reply', 'rate_feedback', req.params.id, status);
+  adminRedirectWithMessage(res, `/admin/rate/feedback/${encodeURIComponent(req.params.id)}`, '回复已保存。');
+});
+
+app.post('/admin/rate/feedback/:id/close', requireAdmin, requireSuperadmin, (req, res) => {
+  if (!reviewStore.getFeedback(req.params.id)) {
+    res.status(404).send('未找到课评反馈。');
+    return;
+  }
+  reviewStore.closeFeedback(req.params.id);
+  adminStore.audit(req.admin.id, 'rate.feedback.close', 'rate_feedback', req.params.id);
+  adminRedirectWithMessage(res, `/admin/rate/feedback/${encodeURIComponent(req.params.id)}`, '反馈已关闭。');
 });
 
 app.get('/', (req, res) => {
