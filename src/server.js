@@ -17,6 +17,7 @@ import { fetchSchoolStudentId, maskedStudentId } from './identityProbe.js';
 import { StudentIdentityStore } from './studentIdentityStore.js';
 import { ShareStore } from './shareStore.js';
 import { EngagementStore } from './engagementStore.js';
+import { ReviewStore } from './reviewStore.js';
 import { startTipImageCleanup } from './tipImageCleanup.js';
 import {
   imageType, latestAnnouncement, moveItem, nextSortOrder, ordered,
@@ -73,6 +74,7 @@ const shareStore = new ShareStore({
   encryptionKey: process.env.SHARE_DATA_KEY ??
     (process.env.NODE_ENV === 'test' ? process.env.STUDENT_ID_ENCRYPTION_KEY : undefined)
 });
+const reviewStore = new ReviewStore({ filename: `${dataDir}/reviews.sqlite` });
 const tipImageDir = path.join(dataDir, 'tip-images');
 const tipEditorScript = fileURLToPath(new URL('./adminTipEditor.js', import.meta.url));
 const tipImageUpload = multer({
@@ -138,7 +140,8 @@ app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 // session value, even when a malformed identity request cannot reach its route.
 app.use((error, req, res, next) => {
   if (!req.path.startsWith('/api/v1/student/') &&
-      !req.path.startsWith('/api/v1/shares/') && !req.path.startsWith('/admin')) return next(error);
+      !req.path.startsWith('/api/v1/shares/') && !req.path.startsWith('/api/v1/rate/') &&
+      !req.path.startsWith('/admin')) return next(error);
   res.setHeader('Cache-Control', 'no-store');
   if (req.path.startsWith('/admin')) {
     res.status(400).type('text').send('请求格式无效。');
@@ -181,6 +184,24 @@ const shareResolveRateLimit = createRateLimit({
 const shareResolveGlobalRateLimit = createRateLimit({
   windowMs: 60 * 1000, max: 100, keyFn: () => 'all',
   message: '分享码服务繁忙，请稍后再试。'
+});
+const rateReviewWriteLimit = createRateLimit({
+  windowMs: 24 * 60 * 60 * 1000, max: 30,
+  keyFn: (req) => req.studentSession.account_id,
+  message: '今天的评价操作次数已达上限，请明天再试。'
+});
+const rateFeedbackLimit = createRateLimit({
+  windowMs: 10 * 60 * 1000, max: 10,
+  keyFn: (req) => req.studentSession.account_id,
+  message: '课评反馈操作过于频繁，请稍后再试。'
+});
+const rateLookupLimit = createRateLimit({
+  windowMs: 60 * 1000, max: 20,
+  message: '课程匹配过于频繁，请稍后再试。'
+});
+const rateSearchLimit = createRateLimit({
+  windowMs: 60 * 1000, max: 120,
+  message: '搜索过于频繁，请稍后再试。'
 });
 
 const loginRateLimit = createRateLimit({
@@ -452,6 +473,7 @@ app.delete('/api/v1/student/data', (req, res) => {
   }
   shareStore.deleteAccount(accountId);
   engagementStore.deleteAccount(accountId);
+  reviewStore.deleteAccount(accountId);
   studentIdentityStore.deleteAccount(accountId);
   res.status(204).end();
 });
@@ -735,6 +757,170 @@ app.post('/api/v1/student/feedback/:id/close', requireStudentSession, studentFee
   engagementStore.closeFeedback(req.params.id, req.studentSession.account_id);
   res.setHeader('Cache-Control', 'no-store');
   res.json({ success: true, data: engagementStore.getFeedback(req.params.id, req.studentSession.account_id) });
+});
+
+// Course reviews. Public reads never include account ids.
+
+function rateNotFound(res, label = '内容') {
+  res.status(404).json({ success: false, error: `未找到${label}。` });
+}
+
+app.get('/api/v1/rate/questions', (req, res) => {
+  sendCachedJson(req, res, {
+    success: true,
+    data: {
+      questions: reviewStore.questions(),
+      categories: reviewStore.categories(),
+      feedbackKinds: reviewStore.feedbackKinds()
+    }
+  });
+});
+
+app.get('/api/v1/rate/home', (req, res) => {
+  sendCachedJson(req, res, { success: true, data: reviewStore.home() });
+});
+
+app.get('/api/v1/rate/search', rateSearchLimit, (req, res) => {
+  const query = trimText(req.query.q);
+  if (query.length > 60) {
+    res.status(400).json({ success: false, error: '搜索内容过长。' });
+    return;
+  }
+  sendCachedJson(req, res, { success: true, data: reviewStore.search(query) });
+});
+
+app.get('/api/v1/rate/courses/:id', (req, res) => {
+  const course = reviewStore.course(req.params.id);
+  if (!course) return rateNotFound(res, '课程');
+  sendCachedJson(req, res, { success: true, data: course });
+});
+
+app.get('/api/v1/rate/teachers/:id', (req, res) => {
+  const teacher = reviewStore.teacher(req.params.id);
+  if (!teacher) return rateNotFound(res, '教师');
+  sendCachedJson(req, res, { success: true, data: teacher });
+});
+
+app.get('/api/v1/rate/units/:id', (req, res) => {
+  const unit = reviewStore.unit(req.params.id);
+  if (!unit) return rateNotFound(res, '课程');
+  sendCachedJson(req, res, { success: true, data: unit });
+});
+
+app.get('/api/v1/rate/rankings/:category', (req, res) => {
+  const page = Math.min(Math.max(Number.parseInt(String(req.query.page ?? '1'), 10) || 1, 1), 100);
+  const pageSize = 20;
+  const ranking = reviewStore.ranking(req.params.category, {
+    sub: trimText(req.query.sub), limit: pageSize, offset: (page - 1) * pageSize
+  });
+  if (!ranking) return rateNotFound(res, '榜单');
+  sendCachedJson(req, res, { success: true, data: { ...ranking, page, pageSize } });
+});
+
+app.get('/api/v1/rate/colleges/:name/courses', (req, res) => {
+  const courses = reviewStore.collegeCourses(req.params.name);
+  if (!courses.length) return rateNotFound(res, '学院');
+  sendCachedJson(req, res, { success: true, data: { name: req.params.name, courses } });
+});
+
+app.post('/api/v1/rate/units/lookup', rateLookupLimit, (req, res) => {
+  const items = req.body?.items;
+  res.setHeader('Cache-Control', 'no-store');
+  if (!Array.isArray(items) || items.length > 60 ||
+      items.some((item) => !item || typeof item !== 'object' ||
+        ['teachingClassId', 'courseCode', 'courseName', 'teacherName']
+          .some((key) => item[key] !== undefined && (typeof item[key] !== 'string' || item[key].length > 120)))) {
+    res.status(400).json({ success: false, error: '课程列表格式无效。' });
+    return;
+  }
+  res.json({ success: true, data: reviewStore.lookup(items) });
+});
+
+app.get('/api/v1/student/rate/reviews', requireStudentSession, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    success: true,
+    data: {
+      blocked: reviewStore.isBlocked(req.studentSession.account_id),
+      reviews: reviewStore.myReviews(req.studentSession.account_id)
+    }
+  });
+});
+
+app.get('/api/v1/student/rate/reviews/:unitId', requireStudentSession, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, data: reviewStore.myReview(req.studentSession.account_id, req.params.unitId) });
+});
+
+app.put('/api/v1/student/rate/reviews/:unitId', requireStudentSession, rateReviewWriteLimit, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  let result;
+  try {
+    result = reviewStore.saveReview(req.studentSession.account_id, req.params.unitId, req.body);
+  } catch (error) {
+    res.status(400).json({ success: false, error: error instanceof Error ? error.message : '评价格式无效。' });
+    return;
+  }
+  if (result.error === 'blocked') return res.status(403).json({ success: false, error: '该账户暂无法发布评价。' });
+  if (result.error === 'not_found') return rateNotFound(res, '课程');
+  res.status(result.created ? 201 : 200).json({ success: true, data: result.review });
+});
+
+app.delete('/api/v1/student/rate/reviews/:unitId', requireStudentSession, rateReviewWriteLimit, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!reviewStore.deleteMyReview(req.studentSession.account_id, req.params.unitId)) {
+    return rateNotFound(res, '评价');
+  }
+  res.status(204).end();
+});
+
+app.get('/api/v1/student/rate/feedback', requireStudentSession, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, data: reviewStore.listFeedback(req.studentSession.account_id).map(ownRateFeedback) });
+});
+
+app.post('/api/v1/student/rate/feedback', requireStudentSession, rateFeedbackLimit, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const content = trimText(req.body?.content);
+  const fields = {
+    kind: trimText(req.body?.kind), unitId: trimText(req.body?.unitId), courseId: trimText(req.body?.courseId),
+    content, appVersion: trimText(req.body?.appVersion), platform: trimText(req.body?.platform)
+  };
+  try {
+    if (!content) throw new Error('反馈内容不能为空。');
+    validateLength(content, 1000, '内容');
+    validateLength(fields.unitId, 40, '关联课程');
+    validateLength(fields.courseId, 40, '关联课程');
+    validateLength(fields.appVersion, 60, '客户端版本');
+    validateLength(fields.platform, 60, '平台信息');
+    const result = reviewStore.createFeedback(req.studentSession.account_id, fields);
+    if (result.error === 'blocked') return res.status(403).json({ success: false, error: '该账户暂无法提交课评反馈。' });
+    if (result.error === 'rate_limited') return res.status(429).json({ success: false, error: '反馈提交过于频繁，请稍后再试。' });
+    if (result.error === 'invalid_target') return res.status(400).json({ success: false, error: '关联的课程不存在。' });
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error instanceof Error ? error.message : '反馈格式无效。' });
+  }
+});
+
+function ownRateFeedback(item) {
+  if (!item) return null;
+  const { accountId, blocked, ...rest } = item;
+  return { ...rest, replies: rest.replies.map(({ id, message, createdAt }) => ({ id, message, createdAt })) };
+}
+
+app.get('/api/v1/student/rate/feedback/:id', requireStudentSession, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const item = reviewStore.getFeedback(req.params.id, req.studentSession.account_id);
+  if (!item) return rateNotFound(res, '反馈');
+  res.json({ success: true, data: ownRateFeedback(item) });
+});
+
+app.post('/api/v1/student/rate/feedback/:id/close', requireStudentSession, rateFeedbackLimit, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!reviewStore.getFeedback(req.params.id, req.studentSession.account_id)) return rateNotFound(res, '反馈');
+  reviewStore.closeFeedback(req.params.id, req.studentSession.account_id);
+  res.json({ success: true, data: ownRateFeedback(reviewStore.getFeedback(req.params.id, req.studentSession.account_id)) });
 });
 
 app.get('/api/v1/feedback/:id', async (req, res, next) => {
@@ -1356,4 +1542,4 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-export { app, adminStore, studentIdentityStore, engagementStore, shareStore };
+export { app, adminStore, studentIdentityStore, engagementStore, shareStore, reviewStore };

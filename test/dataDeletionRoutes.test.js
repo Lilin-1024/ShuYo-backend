@@ -12,7 +12,7 @@ process.env.STUDENT_ID_HMAC_SECRET = '11'.repeat(32);
 process.env.STUDENT_ID_ENCRYPTION_KEY = '22'.repeat(32);
 process.env.SHARE_DATA_KEY = '33'.repeat(32);
 
-const { app, adminStore, studentIdentityStore, engagementStore, shareStore } =
+const { app, adminStore, studentIdentityStore, engagementStore, shareStore, reviewStore } =
   await import('../src/server.js');
 
 test('school verification deletes data without renewing a revoked device', async () => {
@@ -21,6 +21,11 @@ test('school verification deletes data without renewing a revoked device', async
     title: '问题', content: '内容', contact: '', appVersion: '1', platform: 'ios'
   });
   engagementStore.recordPresence(session.accountId);
+  reviewStore.importCatalog([{ 课程号: 'C1', 课程名称: '课程', 上课教师工号: 'T1', 上课教师姓名: '老师', 教学班ID: 'S1' }],
+    '2026-2027-1');
+  const unitId = reviewStore.course('C1').units[0].id;
+  reviewStore.saveReview(session.accountId, unitId, { overall: 4 });
+  reviewStore.createFeedback(session.accountId, { kind: 'other', content: '课评', appVersion: '1', platform: 'ios' });
   shareStore.create(session.accountId, 'request-aaaaaaaa', {
     term: { yearCode: '2026', termCode: '3' }, sessions: [], untimedCourses: []
   }, false);
@@ -54,6 +59,8 @@ test('school verification deletes data without renewing a revoked device', async
     assert.equal(studentIdentityStore.getAccount(session.accountId), null);
     assert.equal(engagementStore.listFeedback(session.accountId).length, 0);
     assert.equal(shareStore.current(session.accountId), null);
+    assert.equal(reviewStore.unit(unitId).reviewCount, 0);
+    assert.equal(reviewStore.listFeedback(session.accountId).length, 0);
     assert.equal((await request('/api/v1/student/data', 'DELETE', { token: grant.token })).status, 401);
     assert.equal((await request('/api/v1/student/sessions', 'POST', {
       schoolCookie: 'JSESSIONID=fresh-school-login', expectedStudentId: '23123456'
