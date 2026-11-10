@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily ShuYo online backup at 04:00 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Asia/Shanghai
+AccuracySec=1min
+Persistent=false
+Unit=shuyo-backup.service
+
+[Install]
+WantedBy=timers.target
