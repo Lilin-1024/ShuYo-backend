@@ -24,8 +24,8 @@ const DEFINITIONS = [
     ['rich', '干货满满'], ['average', '中规中矩'], ['self_study', '倾向自学']] },
   { key: 'grading', title: '给分倾向', multiple: false, descriptionNote: '建议在出分后填写', options: [
     ['generous', '慷慨大方'], ['normal', '正常给分'], ['strict', '给分较严'], ['random', '玄学给分']] },
-  { key: 'teacher_tags', title: '你想送给老师的标签（如果有的话）', multiple: true, maxSelections: 3,
-    preserveOnOmission: true, options: [
+  { key: 'teacher_tags', title: '你想送给老师的标签', multiple: true, maxSelections: 3,
+    descriptionOverride: '多选，最多三项（如果有的话）', preserveOnOmission: true, options: [
       ['humorous', '风趣幽默'], ['clear', '条理清晰'], ['accessible', '深入浅出'], ['inspiring', '启发思考'],
       ['by_the_book', '按部就班'], ['fast_paced', '节奏紧凑'], ['rigorous', '严谨认真'], ['respected', '令人尊敬']] }
 ];

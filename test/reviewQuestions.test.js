@@ -31,7 +31,7 @@ test('difficulty and teacher tags match the requested choices and optional rules
     ['hard', '比较困难'], ['very_hard', '非常困难']
   ]);
   const tags = QUESTIONS.find((question) => question.key === 'teacher_tags');
-  assert.equal(tags.title, '你想送给老师的标签（如果有的话）');
+  assert.equal(tags.title, '你想送给老师的标签');
   assert.equal(tags.multiple, true);
   assert.equal(tags.required, false);
   assert.equal(tags.maxSelections, 3);
@@ -62,7 +62,7 @@ test('description generation follows rules and supports notes or verbatim overri
     descriptionOverride: '自由说明，不改变选择规则' }), '自由说明，不改变选择规则');
   assert.equal(buildQuestionDescription({ descriptionOverride: '' }), '');
   assert.equal(QUESTIONS.find((question) => question.key === 'grading').description, '单选，可跳过（建议在出分后填写）');
-  assert.equal(QUESTIONS.find((question) => question.key === 'teacher_tags').description, '多选，最多三项，可跳过');
+  assert.equal(QUESTIONS.find((question) => question.key === 'teacher_tags').description, '多选，最多三项（如果有的话）');
 });
 
 test('invalid description rule configuration fails instead of advertising an unenforced limit', () => {

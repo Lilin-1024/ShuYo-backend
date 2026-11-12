@@ -50,8 +50,11 @@ test('public reads, student reviews and course review feedback', async () => {
     assert.equal(questions.questions.find((question) => question.key === 'grading').description,
       '单选，可跳过（建议在出分后填写）');
     const tagsQuestion = questions.questions.find((question) => question.key === 'teacher_tags');
+    assert.equal(tagsQuestion.title, '你想送给老师的标签');
+    assert.equal(tagsQuestion.required, false);
+    assert.equal(tagsQuestion.multiple, true);
     assert.equal(tagsQuestion.maxSelections, 3);
-    assert.equal(tagsQuestion.description, '多选，最多三项，可跳过');
+    assert.equal(tagsQuestion.description, '多选，最多三项（如果有的话）');
     assert.equal(tagsQuestion.preserveOnOmission, undefined);
     assert.equal((await fetch(`${base}/api/v1/rate/questions`, {
       headers: { 'if-none-match': questionsEtag }
