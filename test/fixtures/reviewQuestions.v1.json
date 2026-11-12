@@ -1,0 +1,226 @@
+[
+  {
+    "key": "overall",
+    "title": "总体评价",
+    "multiple": false,
+    "required": true,
+    "options": [
+      {
+        "key": "1",
+        "label": "不推荐"
+      },
+      {
+        "key": "2",
+        "label": "谨慎选择"
+      },
+      {
+        "key": "3",
+        "label": "中规中矩"
+      },
+      {
+        "key": "4",
+        "label": "值得一选"
+      },
+      {
+        "key": "5",
+        "label": "强烈推荐"
+      }
+    ]
+  },
+  {
+    "key": "attendance_freq",
+    "title": "签到频率",
+    "multiple": false,
+    "options": [
+      {
+        "key": "every_class",
+        "label": "每节课"
+      },
+      {
+        "key": "often",
+        "label": "经常"
+      },
+      {
+        "key": "sometimes",
+        "label": "偶尔"
+      },
+      {
+        "key": "never",
+        "label": "从不"
+      }
+    ],
+    "required": false
+  },
+  {
+    "key": "attendance_method",
+    "title": "签到方式",
+    "multiple": true,
+    "options": [
+      {
+        "key": "qr",
+        "label": "扫码签到"
+      },
+      {
+        "key": "location",
+        "label": "位置签到"
+      },
+      {
+        "key": "other_xxt",
+        "label": "其他学习通签到方式"
+      },
+      {
+        "key": "roster",
+        "label": "座位表/签名册"
+      },
+      {
+        "key": "quiz",
+        "label": "小测"
+      },
+      {
+        "key": "other",
+        "label": "其他"
+      }
+    ],
+    "required": false
+  },
+  {
+    "key": "assignment_type",
+    "title": "作业/考核类型",
+    "multiple": true,
+    "options": [
+      {
+        "key": "problems",
+        "label": "题目"
+      },
+      {
+        "key": "presentation",
+        "label": "pre"
+      },
+      {
+        "key": "paper",
+        "label": "论文"
+      },
+      {
+        "key": "group",
+        "label": "小组作业"
+      },
+      {
+        "key": "exam",
+        "label": "考试"
+      },
+      {
+        "key": "other",
+        "label": "其他"
+      }
+    ],
+    "required": false
+  },
+  {
+    "key": "discipline",
+    "title": "纪律要求",
+    "multiple": false,
+    "options": [
+      {
+        "key": "relaxed",
+        "label": "比较宽松"
+      },
+      {
+        "key": "normal",
+        "label": "正常要求"
+      },
+      {
+        "key": "strict",
+        "label": "极其严格"
+      }
+    ],
+    "required": false
+  },
+  {
+    "key": "interaction",
+    "title": "互动情况",
+    "multiple": false,
+    "options": [
+      {
+        "key": "lecture",
+        "label": "讲授为主"
+      },
+      {
+        "key": "light",
+        "label": "简单互动"
+      },
+      {
+        "key": "frequent",
+        "label": "经常提问"
+      }
+    ],
+    "required": false
+  },
+  {
+    "key": "workload",
+    "title": "作业量",
+    "multiple": false,
+    "options": [
+      {
+        "key": "none",
+        "label": "几乎没有"
+      },
+      {
+        "key": "occasional",
+        "label": "偶尔有"
+      },
+      {
+        "key": "regular",
+        "label": "规律适中"
+      },
+      {
+        "key": "heavy",
+        "label": "极其繁重"
+      }
+    ],
+    "required": false
+  },
+  {
+    "key": "gain",
+    "title": "课堂收获",
+    "multiple": false,
+    "options": [
+      {
+        "key": "rich",
+        "label": "干货满满"
+      },
+      {
+        "key": "average",
+        "label": "中规中矩"
+      },
+      {
+        "key": "self_study",
+        "label": "倾向自学"
+      }
+    ],
+    "required": false
+  },
+  {
+    "key": "grading",
+    "title": "给分倾向",
+    "multiple": false,
+    "options": [
+      {
+        "key": "generous",
+        "label": "慷慨大方"
+      },
+      {
+        "key": "normal",
+        "label": "正常给分"
+      },
+      {
+        "key": "strict",
+        "label": "给分较严"
+      },
+      {
+        "key": "random",
+        "label": "玄学给分"
+      }
+    ],
+    "required": false
+  }
+]

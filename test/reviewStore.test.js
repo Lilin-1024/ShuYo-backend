@@ -132,7 +132,7 @@ test('reviews validate answers, update summaries and produce highlighted stats',
 test('assignment assessment question keeps its key and adds exams before other', () => {
   const store = new ReviewStore({ filename: ':memory:' });
   try {
-    const question = store.questions()[3];
+    const question = store.questions().find((item) => item.key === 'assignment_type');
     assert.equal(question.key, 'assignment_type');
     assert.equal(question.title, '作业/考核类型');
     assert.equal(question.multiple, true);

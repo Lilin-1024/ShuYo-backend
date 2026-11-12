@@ -3,33 +3,7 @@ import { chmodSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-// Question and option keys are stored with each answer; never rename a key.
-// Titles and labels may change without touching existing answers.
-const QUESTIONS = [
-  { key: 'overall', title: '总体评价', multiple: false, required: true, options: [
-    ['1', '不推荐'], ['2', '谨慎选择'], ['3', '中规中矩'], ['4', '值得一选'], ['5', '强烈推荐']] },
-  { key: 'attendance_freq', title: '签到频率', multiple: false, options: [
-    ['every_class', '每节课'], ['often', '经常'], ['sometimes', '偶尔'], ['never', '从不']] },
-  { key: 'attendance_method', title: '签到方式', multiple: true, options: [
-    ['qr', '扫码签到'], ['location', '位置签到'], ['other_xxt', '其他学习通签到方式'],
-    ['roster', '座位表/签名册'], ['quiz', '小测'], ['other', '其他']] },
-  { key: 'assignment_type', title: '作业/考核类型', multiple: true, options: [
-    ['problems', '题目'], ['presentation', 'pre'], ['paper', '论文'], ['group', '小组作业'], ['exam', '考试'], ['other', '其他']] },
-  { key: 'discipline', title: '纪律要求', multiple: false, options: [
-    ['relaxed', '比较宽松'], ['normal', '正常要求'], ['strict', '极其严格']] },
-  { key: 'interaction', title: '互动情况', multiple: false, options: [
-    ['lecture', '讲授为主'], ['light', '简单互动'], ['frequent', '经常提问']] },
-  { key: 'workload', title: '作业量', multiple: false, options: [
-    ['none', '几乎没有'], ['occasional', '偶尔有'], ['regular', '规律适中'], ['heavy', '极其繁重']] },
-  { key: 'gain', title: '课堂收获', multiple: false, options: [
-    ['rich', '干货满满'], ['average', '中规中矩'], ['self_study', '倾向自学']] },
-  { key: 'grading', title: '给分倾向', multiple: false, options: [
-    ['generous', '慷慨大方'], ['normal', '正常给分'], ['strict', '给分较严'], ['random', '玄学给分']] }
-].map((question) => ({
-  ...question,
-  required: Boolean(question.required),
-  options: question.options.map(([key, label]) => ({ key, label }))
-}));
+import { QUESTIONS, OMISSION_PRESERVED_QUESTION_KEYS } from './reviewQuestions.js';
 
 const CATEGORIES = [
   { key: 'general', title: '通识课', nature: '通识课', subcategories: [
@@ -577,12 +551,16 @@ class ReviewStore {
       const selected = [...new Set((Array.isArray(value) ? value : [value]).filter((item) => item !== null && item !== ''))];
       if (!selected.length) continue;
       if (!question.multiple && selected.length > 1) throw new Error(`「${question.title}」只能选一项。`);
+      if (question.maxSelections !== undefined && selected.length > question.maxSelections) {
+        throw new Error(`「${question.title}」最多选择${question.maxSelections}项。`);
+      }
       for (const option of selected) {
         if (!question.options.some((item) => item.key === option)) throw new Error(`「${question.title}」选项无效。`);
         result.push([key, option]);
       }
     }
-    return { overall, answers: result };
+    const preservedKeys = OMISSION_PRESERVED_QUESTION_KEYS.filter((key) => !Object.hasOwn(answers, key));
+    return { overall, answers: result, preservedKeys };
   }
 
   refreshUnits(unitIds) {
@@ -625,7 +603,7 @@ class ReviewStore {
   }
 
   saveReview(accountId, unitId, input, now = new Date()) {
-    const { overall, answers } = this.validateReview(input);
+    const { overall, answers, preservedKeys } = this.validateReview(input);
     return this.transaction(() => {
       if (this.isBlocked(accountId)) return { error: 'blocked' };
       if (!this.db.prepare('SELECT 1 FROM units WHERE id = ?').get(unitId)) return { error: 'not_found' };
@@ -634,7 +612,13 @@ class ReviewStore {
       const id = existing?.id ?? `rv_${crypto.randomUUID()}`;
       if (existing) {
         this.db.prepare('UPDATE reviews SET overall = ?, updated_at = ? WHERE id = ?').run(overall, at, id);
-        this.db.prepare('DELETE FROM review_answers WHERE review_id = ?').run(id);
+        if (preservedKeys.length) {
+          const placeholders = preservedKeys.map(() => '?').join(',');
+          this.db.prepare(`DELETE FROM review_answers WHERE review_id = ? AND question NOT IN (${placeholders})`)
+            .run(id, ...preservedKeys);
+        } else {
+          this.db.prepare('DELETE FROM review_answers WHERE review_id = ?').run(id);
+        }
       } else {
         this.db.prepare(`INSERT INTO reviews(id, unit_id, account_id, overall, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?)`).run(id, unitId, accountId, overall, at, at);

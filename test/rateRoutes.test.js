@@ -39,10 +39,25 @@ test('public reads, student reviews and course review feedback', async () => {
   });
   const json = async (response) => (await response.json()).data;
   try {
-    const questions = await json(await request('/api/v1/rate/questions'));
-    assert.equal(questions.questions[0].key, 'overall');
+    const questionsResponse = await request('/api/v1/rate/questions');
+    const questionsEtag = questionsResponse.headers.get('etag');
+    const questions = await json(questionsResponse);
+    assert.deepEqual(questions.questions.map((question) => question.key), [
+      'overall', 'attendance_freq', 'attendance_method', 'discipline', 'interaction', 'workload',
+      'assignment_type', 'difficulty', 'gain', 'grading', 'teacher_tags'
+    ]);
+    assert.ok(questions.questions.every((question) => typeof question.description === 'string'));
+    assert.equal(questions.questions.find((question) => question.key === 'grading').description,
+      '单选，可跳过（建议在出分后填写）');
+    const tagsQuestion = questions.questions.find((question) => question.key === 'teacher_tags');
+    assert.equal(tagsQuestion.maxSelections, 3);
+    assert.equal(tagsQuestion.description, '多选，最多三项，可跳过');
+    assert.equal(tagsQuestion.preserveOnOmission, undefined);
+    assert.equal((await fetch(`${base}/api/v1/rate/questions`, {
+      headers: { 'if-none-match': questionsEtag }
+    })).status, 304);
     assert.equal(questions.categories.length, 4);
-    const assignment = questions.questions[3];
+    const assignment = questions.questions.find((item) => item.key === 'assignment_type');
     assert.equal(assignment.key, 'assignment_type');
     assert.equal(assignment.title, '作业/考核类型');
     assert.equal(assignment.multiple, true);
@@ -66,7 +81,8 @@ test('public reads, student reviews and course review feedback', async () => {
       method: 'PUT', token: first.token, body: { overall: 5 } })).status, 404);
     const created = await request(route, { method: 'PUT', token: first.token,
       body: { overall: 5, answers: {
-        grading: 'generous', attendance_method: ['qr', 'quiz'], assignment_type: ['group', 'exam']
+        grading: 'generous', attendance_method: ['qr', 'quiz'], assignment_type: ['group', 'exam'],
+        difficulty: 'hard', teacher_tags: ['humorous', 'clear', 'rigorous']
       } } });
     assert.equal(created.status, 201);
     assert.deepEqual((await json(created)).answers.assignment_type, ['group', 'exam']);
@@ -75,6 +91,18 @@ test('public reads, student reviews and course review feedback', async () => {
     const saved = await json(await request(route, { token: first.token }));
     assert.equal(saved.overall, 4);
     assert.deepEqual(saved.answers.assignment_type, ['exam', 'other']);
+    assert.deepEqual(saved.answers.difficulty, ['hard']);
+    assert.deepEqual(saved.answers.teacher_tags, ['humorous', 'clear', 'rigorous']);
+    const tooManyTags = await request(route, { method: 'PUT', token: first.token,
+      body: { overall: 1, answers: { teacher_tags: ['humorous', 'clear', 'rigorous', 'respected'] } } });
+    assert.equal(tooManyTags.status, 400);
+    assert.match((await tooManyTags.json()).error, /最多选择3项/);
+    assert.deepEqual(await json(await request(route, { token: first.token })), saved);
+    const cleared = await request(route, { method: 'PUT', token: first.token, body: {
+      overall: 4, answers: { assignment_type: ['exam', 'other'], difficulty: [], teacher_tags: [] }
+    } });
+    assert.equal(cleared.status, 200);
+    assert.deepEqual((await json(cleared)).answers, { assignment_type: ['exam', 'other'] });
     assert.equal(await json(await request(route, { token: other.token })), null);
     const mine = await json(await request('/api/v1/student/rate/reviews', { token: first.token }));
     assert.equal(mine.reviews.length, 1);
