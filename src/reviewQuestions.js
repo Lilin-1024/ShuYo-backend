@@ -1,5 +1,5 @@
 // Question and option keys are stored with each answer; never rename a key.
-// Array order controls presentation only. Keep every existing option when reordering.
+// Array order controls presentation only. Retired options must never be reassigned.
 // descriptionNote appends to the generated hint; descriptionOverride replaces it
 // (including an empty string). Neither changes the actual validation rules.
 const DEFINITIONS = [
@@ -26,9 +26,13 @@ const DEFINITIONS = [
     ['generous', '慷慨大方'], ['normal', '正常给分'], ['strict', '给分较严'], ['random', '玄学给分']] },
   { key: 'teacher_tags', title: '你想送给老师的标签', multiple: true, maxSelections: 3,
     descriptionOverride: '多选，最多三项（如果有的话）', preserveOnOmission: true, options: [
-      ['humorous', '风趣幽默'], ['clear', '条理清晰'], ['accessible', '深入浅出'], ['inspiring', '启发思考'],
-      ['by_the_book', '按部就班'], ['fast_paced', '节奏紧凑'], ['rigorous', '严谨认真'], ['respected', '令人尊敬']] }
+      ['humorous', '风趣幽默'], ['rigorous', '严谨认真'], ['accessible', '深入浅出'], ['inspiring', '启发思考'],
+      ['by_the_book', '按部就班'], ['fast_paced', '节奏紧凑'], ['kind', '和蔼可亲'], ['respected', '令人尊敬']] }
 ];
+
+// Drop only explicitly retired answers, including submissions from cached questionnaires.
+// Keep rigorous unchanged so historical selections retain their original meaning.
+const RETIRED_QUESTION_OPTIONS = { teacher_tags: ['clear'] };
 
 function selectionCountText(count) {
   const digits = '零一二三四五六七八九';
@@ -69,4 +73,4 @@ const QUESTIONS = DEFINITIONS.map((definition) => {
 const OMISSION_PRESERVED_QUESTION_KEYS = DEFINITIONS.filter((question) => question.preserveOnOmission)
   .map((question) => question.key);
 
-export { QUESTIONS, OMISSION_PRESERVED_QUESTION_KEYS, buildQuestionDescription };
+export { QUESTIONS, OMISSION_PRESERVED_QUESTION_KEYS, RETIRED_QUESTION_OPTIONS, buildQuestionDescription };

@@ -3,14 +3,16 @@ import { chmodSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-import { QUESTIONS, OMISSION_PRESERVED_QUESTION_KEYS } from './reviewQuestions.js';
+import { QUESTIONS, OMISSION_PRESERVED_QUESTION_KEYS, RETIRED_QUESTION_OPTIONS } from './reviewQuestions.js';
 
+const CORE_GENERAL_CATEGORIES = ['人文类核心通识课', '理工类核心通识课', '经管类核心通识课'];
 const CATEGORIES = [
   { key: 'general', title: '通识课', nature: '通识课', subcategories: [
-    '人文类通选课', '理工类通选课', '经管类通选课', '人文类核心通识课', '理工类核心通识课', '经管类核心通识课'] },
+    '人文类通选课', '理工类通选课', '经管类通选课', ...CORE_GENERAL_CATEGORIES] },
+  { key: 'core_general', title: '核心通识课', category: CORE_GENERAL_CATEGORIES,
+    subcategories: CORE_GENERAL_CATEGORIES },
   { key: 'pe', title: '体育', college: '体育学院' },
-  { key: 'public', title: '公共基础课', nature: '公共基础课' },
-  { key: 'seminar', title: '新生研讨课', nature: '新生研讨课', category: '新生研讨课' }
+  { key: 'public', title: '公共基础课', nature: '公共基础课' }
 ];
 
 const FEEDBACK_KINDS = [
@@ -227,6 +229,14 @@ class ReviewStore {
       PRAGMA user_version = 1;
       COMMIT;
     `);
+    // Idempotent data cleanup: retired choices must not count as respondents.
+    // No schema changes, relabeling or changes to reviews/unit summaries.
+    this.transaction(() => {
+      const remove = this.db.prepare('DELETE FROM review_answers WHERE question = ? AND option = ?');
+      for (const [question, options] of Object.entries(RETIRED_QUESTION_OPTIONS)) {
+        for (const option of options) remove.run(question, option);
+      }
+    });
   }
 
   transaction(callback) {
@@ -424,8 +434,9 @@ class ReviewStore {
       params.push(category.nature);
     }
     if (category.category) {
-      parts.push('c.category = ?');
-      params.push(category.category);
+      const values = Array.isArray(category.category) ? category.category : [category.category];
+      parts.push(`c.category IN (${values.map(() => '?').join(',')})`);
+      params.push(...values);
     }
     if (category.college) {
       parts.push('c.college = ?');
@@ -548,7 +559,8 @@ class ReviewStore {
     for (const [key, value] of Object.entries(answers)) {
       const question = QUESTIONS.find((item) => item.key === key && item.key !== 'overall');
       if (!question) throw new Error('评价题目无效。');
-      const selected = [...new Set((Array.isArray(value) ? value : [value]).filter((item) => item !== null && item !== ''))];
+      const selected = [...new Set((Array.isArray(value) ? value : [value]).filter((item) => item !== null && item !== ''))]
+        .filter((option) => !(RETIRED_QUESTION_OPTIONS[key] ?? []).includes(option));
       if (!selected.length) continue;
       if (!question.multiple && selected.length > 1) throw new Error(`「${question.title}」只能选一项。`);
       if (question.maxSelections !== undefined && selected.length > question.maxSelections) {

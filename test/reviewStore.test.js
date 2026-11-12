@@ -212,6 +212,48 @@ test('rankings use the bayesian order but expose real averages', () => {
   }
 });
 
+test('core general rankings follow general, include all three core categories and retire only the seminar column', () => {
+  const store = new ReviewStore({ filename: ':memory:' });
+  const categories = ['人文类核心通识课', '理工类核心通识课', '经管类核心通识课'];
+  try {
+    const coreRows = categories.map((category, index) => row({
+      课程号: `CORE${index}`, 课程名称: `核心课程${index}`, 课程性质: '通识课', 课程类别: category,
+      教学班ID: `CORE-S${index}`, 上课教师工号: `CORE-T${index}`, 上课教师姓名: `核心教师${index}`, 教师职称: '讲师'
+    }));
+    store.importCatalog([...rows, ...coreRows,
+      row({ 课程号: 'CORE-UNRATED', 课程名称: '尚未评价的核心课', 课程性质: '通识课', 课程类别: categories[0],
+        教学班ID: 'CORE-UNRATED-S' }),
+      row({ 课程号: 'SEMINAR', 课程名称: '新生研讨课', 课程性质: '新生研讨课', 课程类别: '新生研讨课',
+        教学班ID: 'SEMINAR-S' })
+    ], '2026-2027-1');
+    for (const courseId of ['TS01', 'CORE0', 'CORE1', 'CORE2', 'SEMINAR']) {
+      store.saveReview(`review-${courseId}`, store.course(courseId).units[0].id, { overall: 4 });
+    }
+    assert.deepEqual(store.categories().map((category) => [category.key, category.title]), [
+      ['general', '通识课'], ['core_general', '核心通识课'], ['pe', '体育'], ['public', '公共基础课']
+    ]);
+    const ranking = store.ranking('core_general');
+    assert.equal(ranking.total, 3);
+    assert.deepEqual(new Set(ranking.items.map((unit) => unit.course.id)), new Set(['CORE0', 'CORE1', 'CORE2']));
+    assert.deepEqual(ranking.subcategories, categories);
+    for (const [index, sub] of categories.entries()) {
+      const filtered = store.ranking('core_general', { sub });
+      assert.equal(filtered.total, 1);
+      assert.equal(filtered.items[0].course.id, `CORE${index}`);
+    }
+    assert.equal(store.ranking('core_general', { sub: '人文类通选课' }), null);
+    assert.equal(store.ranking('general').total, 4);
+    assert.equal(store.ranking('seminar'), null);
+    assert.ok(store.course('SEMINAR'));
+    const home = store.home();
+    assert.deepEqual(home.rankings.map((category) => category.key), ['general', 'core_general', 'pe', 'public']);
+    assert.equal(home.rankings[1].total, 3);
+    assert.equal(home.rankings[1].items.length, 3);
+  } finally {
+    store.close();
+  }
+});
+
 test('course review feedback is rate limited, replied and closed', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'shuyo-reviews-'));
   const store = new ReviewStore({ filename: path.join(dir, 'reviews.sqlite') });

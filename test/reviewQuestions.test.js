@@ -36,8 +36,8 @@ test('difficulty and teacher tags match the requested choices and optional rules
   assert.equal(tags.required, false);
   assert.equal(tags.maxSelections, 3);
   assert.deepEqual(tags.options.map((option) => [option.key, option.label]), [
-    ['humorous', '风趣幽默'], ['clear', '条理清晰'], ['accessible', '深入浅出'], ['inspiring', '启发思考'],
-    ['by_the_book', '按部就班'], ['fast_paced', '节奏紧凑'], ['rigorous', '严谨认真'], ['respected', '令人尊敬']
+    ['humorous', '风趣幽默'], ['rigorous', '严谨认真'], ['accessible', '深入浅出'], ['inspiring', '启发思考'],
+    ['by_the_book', '按部就班'], ['fast_paced', '节奏紧凑'], ['kind', '和蔼可亲'], ['respected', '令人尊敬']
   ]);
   for (const question of QUESTIONS) {
     assert.equal(new Set(question.options.map((option) => option.key)).size, question.options.length);

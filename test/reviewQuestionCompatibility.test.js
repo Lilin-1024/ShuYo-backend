@@ -96,16 +96,16 @@ test('new choices validate, deduplicate and count actual respondents without lim
     store.saveReview('skip', unitId, { overall: 4 });
     for (let count = 0; count <= 3; count++) {
       store.saveReview(`tags-${count}`, unitId, { overall: 4, answers: {
-        difficulty: 'moderate', teacher_tags: ['humorous', 'clear', 'inspiring'].slice(0, count)
+        difficulty: 'moderate', teacher_tags: ['humorous', 'rigorous', 'inspiring'].slice(0, count)
       } });
     }
     const duplicate = store.saveReview('deduplicated', unitId, { overall: 4, answers: {
-      teacher_tags: ['humorous', 'clear', 'inspiring', 'humorous']
+      teacher_tags: ['humorous', 'rigorous', 'inspiring', 'humorous']
     } }).review;
-    assert.deepEqual(duplicate.answers.teacher_tags, ['humorous', 'clear', 'inspiring']);
+    assert.deepEqual(duplicate.answers.teacher_tags, ['humorous', 'rigorous', 'inspiring']);
     const beforeInvalid = databaseState(store);
     assert.throws(() => store.saveReview('deduplicated', unitId, { overall: 1, answers: {
-      teacher_tags: ['humorous', 'clear', 'inspiring', 'rigorous']
+      teacher_tags: ['humorous', 'rigorous', 'inspiring', 'kind']
     } }), /最多选择3项/);
     assert.throws(() => store.saveReview('invalid', unitId, { overall: 4, answers: { teacher_tags: ['unknown'] } }), /选项无效/);
     assert.throws(() => store.saveReview('invalid', unitId, { overall: 4, answers: { difficulty: 'unknown' } }), /选项无效/);
@@ -120,7 +120,7 @@ test('new choices validate, deduplicate and count actual respondents without lim
     assert.equal(stats.teacher_tags.answered, 4);
     assert.deepEqual(stats.teacher_tags.options.filter((option) => option.count)
       .map((option) => [option.key, option.count, option.percent]),
-    [['humorous', 4, 100], ['clear', 3, 75], ['inspiring', 2, 50]]);
+    [['humorous', 4, 100], ['rigorous', 3, 75], ['inspiring', 2, 50]]);
     assert.equal(stats.assignment_type.answered, 1);
     assert.ok(stats.assignment_type.options.every((option) => option.count === 1));
   } finally {
@@ -132,24 +132,90 @@ test('legacy or cached submissions preserve omitted new answers while explicit e
   const { store, unitId } = createStore();
   try {
     store.saveReview('existing', unitId, { overall: 5, answers: {
-      difficulty: 'hard', teacher_tags: ['clear', 'rigorous'], workload: 'heavy', assignment_type: ['exam']
+      difficulty: 'hard', teacher_tags: ['humorous', 'rigorous'], workload: 'heavy', assignment_type: ['exam']
     } });
     const preservedRows = () => store.db.prepare("SELECT rowid, * FROM review_answers WHERE question IN ('difficulty', 'teacher_tags') ORDER BY rowid").all();
     const before = preservedRows();
     store.saveReview('existing', unitId, { overall: 4, answers: { workload: 'none' } });
     assert.deepEqual(preservedRows(), before);
     assert.deepEqual(store.myReview('existing', unitId).answers, {
-      difficulty: ['hard'], teacher_tags: ['clear', 'rigorous'], workload: ['none']
+      difficulty: ['hard'], teacher_tags: ['humorous', 'rigorous'], workload: ['none']
     });
     store.saveReview('existing', unitId, { overall: 3, answers: { difficulty: [] } });
-    assert.deepEqual(store.myReview('existing', unitId).answers, { teacher_tags: ['clear', 'rigorous'] });
+    assert.deepEqual(store.myReview('existing', unitId).answers, { teacher_tags: ['humorous', 'rigorous'] });
     store.saveReview('existing', unitId, { overall: 3 });
-    assert.deepEqual(store.myReview('existing', unitId).answers, { teacher_tags: ['clear', 'rigorous'] });
+    assert.deepEqual(store.myReview('existing', unitId).answers, { teacher_tags: ['humorous', 'rigorous'] });
     store.saveReview('existing', unitId, { overall: 3, answers: { difficulty: 'easy', teacher_tags: ['respected'] } });
     assert.deepEqual(store.myReview('existing', unitId).answers, { difficulty: ['easy'], teacher_tags: ['respected'] });
     store.saveReview('existing', unitId, { overall: 3, answers: { difficulty: [], teacher_tags: [] } });
     assert.deepEqual(store.myReview('existing', unitId).answers, {});
     assert.equal(store.unit(unitId).reviewCount, 1);
+    assert.equal(store.unit(unitId).stats.find((stat) => stat.key === 'teacher_tags').answered, 0);
+  } finally {
+    store.close();
+  }
+});
+
+
+test('retiring clear preserves rigorous identities, other answers and schema across repeated opens', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'shuyo-tag-retirement-'));
+  const filename = path.join(directory, 'reviews.sqlite');
+  let store;
+  try {
+    let unitId;
+    ({ store, unitId } = createStore(filename));
+    for (const [account, tags] of [
+      ['both', ['rigorous', 'humorous']], ['retired-only', []], ['rigorous-only', ['rigorous']]
+    ]) {
+      const { review } = store.saveReview(account, unitId, { overall: 4,
+        answers: { teacher_tags: tags, workload: 'heavy', difficulty: 'hard' } });
+      if (account !== 'rigorous-only') {
+        // The preceding release stored clear and rigorous as distinct choices.
+        store.db.prepare('INSERT INTO review_answers(review_id, question, option) VALUES (?, ?, ?)')
+          .run(review.id, 'teacher_tags', 'clear');
+      }
+    }
+    const before = databaseState(store);
+    const expected = { ...before, answers: before.answers.filter((answer) =>
+      !(answer.question === 'teacher_tags' && answer.option === 'clear')) };
+    store.close();
+    store = new ReviewStore({ filename });
+    assert.deepEqual(databaseState(store), expected);
+    assert.deepEqual(store.myReview('both', unitId).answers.teacher_tags, ['rigorous', 'humorous']);
+    assert.equal(store.myReview('retired-only', unitId).answers.teacher_tags, undefined);
+    assert.deepEqual(store.myReview('rigorous-only', unitId).answers.teacher_tags, ['rigorous']);
+    const stats = store.unit(unitId).stats.find((stat) => stat.key === 'teacher_tags');
+    assert.equal(stats.answered, 2);
+    assert.equal(stats.options.some((option) => option.key === 'clear'), false);
+    assert.deepEqual(stats.options.filter((option) => option.count)
+      .map((option) => [option.key, option.label, option.count, option.percent]), [
+      ['humorous', '风趣幽默', 1, 50], ['rigorous', '严谨认真', 2, 100]
+    ]);
+    assert.equal(stats.options.find((option) => option.key === 'kind').count, 0);
+    store.close();
+    store = new ReviewStore({ filename });
+    assert.deepEqual(databaseState(store), expected);
+  } finally {
+    store?.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('cached retired choices are discarded without reinterpreting rigorous or weakening active limits', () => {
+  const { store, unitId } = createStore();
+  try {
+    const { review } = store.saveReview('cached', unitId, { overall: 4, answers: {
+      teacher_tags: ['clear', 'rigorous', 'kind', 'humorous', 'clear']
+    } });
+    assert.deepEqual(review.answers.teacher_tags, ['rigorous', 'kind', 'humorous']);
+    assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM review_answers WHERE question = 'teacher_tags' AND option = 'clear'").get().n, 0);
+    store.saveReview('cached', unitId, { overall: 5 });
+    assert.deepEqual(store.myReview('cached', unitId).answers.teacher_tags, ['rigorous', 'kind', 'humorous']);
+    assert.throws(() => store.saveReview('cached', unitId, { overall: 4, answers: {
+      teacher_tags: ['clear', 'rigorous', 'kind', 'humorous', 'inspiring']
+    } }), /最多选择3项/);
+    store.saveReview('cached', unitId, { overall: 4, answers: { teacher_tags: ['clear'] } });
+    assert.equal(store.myReview('cached', unitId).answers.teacher_tags, undefined);
     assert.equal(store.unit(unitId).stats.find((stat) => stat.key === 'teacher_tags').answered, 0);
   } finally {
     store.close();
