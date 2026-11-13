@@ -9,7 +9,7 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
 body {
   margin: 0;
   min-height: 100vh;
@@ -20,18 +20,18 @@ body {
   font: 15px/1.85 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 a { color: var(--blue); text-decoration: none; }
-a:hover { text-decoration: underline; }
+a:focus-visible, .button:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+.nav a, .brand, .button { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
 
 /* Header */
 .site-header { background: var(--paper); }
 .nav { min-height: 64px; padding: 0 40px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .brand { display: inline-flex; align-items: center; height: 34px; min-width: 34px; }
-.brand:hover { text-decoration: none; }
 .brand-mark { display: block; width: 14px; height: 14px; border-radius: 50%; background: var(--blue); transition: transform .2s ease; }
-.brand:hover .brand-mark, .brand:focus-visible .brand-mark { transform: scale(1.1); }
+.brand:focus-visible .brand-mark { transform: scale(1.1); }
 .nav-links { display: flex; gap: 24px; align-items: center; }
 .nav-links a { color: var(--muted); font-size: 14px; font-weight: 400; }
-.nav-links a[aria-current="page"], .nav-links a:hover { color: var(--blue); text-decoration: none; }
+.nav-links a[aria-current="page"] { color: var(--blue); text-decoration: none; }
 
 /* Layout */
 .page { flex: 1; width: 100%; max-width: var(--max); margin: 0 auto; padding: 78px 24px 104px; }
@@ -45,9 +45,8 @@ h3 { font-size: 17px; margin: 36px 0 8px; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; }
 .button { display: inline-flex; align-items: baseline; gap: 8px; height: 44px; padding: 0 22px; line-height: 44px; font-size: 15px; font-weight: 600; border-radius: 22px; }
 .button.primary { background: var(--blue); color: #fff; transition: background .18s ease; }
-.button.primary:hover { background: #1565c0; text-decoration: none; }
 .button.secondary { background: #fff; color: var(--blue); border: 1px solid var(--blue); line-height: 42px; transition: background .18s ease; }
-.button.secondary:hover { background: var(--blue-wash); text-decoration: none; }
+.button:active { opacity: .85; }
 .button.disabled { background: var(--blue-wash); color: var(--muted); cursor: not-allowed; }
 .button small { font-size: 12px; font-weight: 500; opacity: .8; }
 .hero-art { width: 100%; max-width: 460px; justify-self: end; overflow: visible; }
@@ -71,7 +70,7 @@ h3 { font-size: 17px; margin: 36px 0 8px; }
 .doc-layout { display: grid; grid-template-columns: 190px minmax(0, 700px); gap: 64px; align-items: start; justify-content: center; }
 .toc { position: sticky; top: 28px; border-left: 2px solid var(--line); padding-left: 14px; }
 .toc a { display: block; color: var(--muted); font-size: 13px; line-height: 1.5; padding: 5px 0; }
-.toc a:hover, .toc a.active { color: var(--blue); text-decoration: none; }
+.toc a.active { color: var(--blue); text-decoration: none; }
 .article { padding: 0 0 20px; }
 .article header { margin-bottom: 30px; }
 .article h1 { font-size: 32px; letter-spacing: -.02em; margin: 0 0 10px; }
@@ -85,7 +84,6 @@ h3 { font-size: 17px; margin: 36px 0 8px; }
 .footer-row + .footer-row { margin-top: 4px; }
 .footer-row > * + *::before { content: "|"; margin: 0 10px; color: var(--line); }
 .site-footer a { color: var(--muted); }
-.site-footer a:hover { color: var(--blue); text-decoration: none; }
 .site-footer span a { color: var(--blue); }
 
 @media (max-width: 720px) {
@@ -101,4 +99,16 @@ h3 { font-size: 17px; margin: 36px 0 8px; }
   .article h1 { font-size: 28px; }
   .footer-row { gap: 0 16px; }
   .footer-row > * + *::before { content: none; }
+}
+
+/* Hover effects only on devices with a real pointer, avoiding sticky hover on touch */
+@media (hover: hover) and (pointer: fine) {
+  a:hover { text-decoration: underline; }
+  .brand:hover { text-decoration: none; }
+  .brand:hover .brand-mark { transform: scale(1.1); }
+  .nav-links a:hover { color: var(--blue); text-decoration: none; }
+  .button.primary:hover { background: #1565c0; text-decoration: none; }
+  .button.secondary:hover { background: var(--blue-wash); text-decoration: none; }
+  .toc a:hover { color: var(--blue); text-decoration: none; }
+  .site-footer a:hover { color: var(--blue); text-decoration: none; }
 }
