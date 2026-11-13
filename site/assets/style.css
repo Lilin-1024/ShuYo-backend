@@ -10,6 +10,9 @@
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
+/* Cross-document navigation: crossfade between pages instead of a white flash */
+@view-transition { navigation: auto; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .18s; }
 body {
   margin: 0;
   min-height: 100vh;
@@ -62,6 +65,7 @@ h3 { font-size: 17px; margin: 36px 0 8px; }
   97.5%, 99.44% { transform: scaleY(.1); }
 }
 @media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
   .art-eye { animation: none; }
   .brand-mark { transition: none; }
 }
