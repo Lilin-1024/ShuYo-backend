@@ -48,7 +48,6 @@ h3 { font-size: 17px; margin: 36px 0 8px; }
 .button.primary:hover { background: #1565c0; text-decoration: none; }
 .button.disabled { background: var(--blue-wash); color: var(--muted); cursor: not-allowed; }
 .button small { font-size: 12px; font-weight: 500; opacity: .8; }
-.text-link { margin-left: 6px; font-size: 14px; font-weight: 600; }
 .hero-art { width: 100%; max-width: 460px; justify-self: end; overflow: visible; }
 .art-wash { fill: var(--blue-wash); }
 .art-fill { fill: var(--blue); }
@@ -93,11 +92,11 @@ h3 { font-size: 17px; margin: 36px 0 8px; }
   .hero { grid-template-columns: 1fr; gap: 40px; padding-top: 24px; }
   .hero-art { order: -1; max-width: 260px; justify-self: start; }
   .tagline { font-size: 16px; margin-bottom: 32px; }
+  .actions { flex-direction: column; align-items: flex-start; }
   .doc-layout { grid-template-columns: 1fr; gap: 28px; }
   .toc { position: static; border-left: 0; padding-left: 0; }
   .toc a { display: inline-block; margin-right: 16px; }
   .article h1 { font-size: 28px; }
   .footer-row { gap: 0 16px; }
-  .text-link { margin-left: 0; }
   .footer-row > * + *::before { content: none; }
 }
