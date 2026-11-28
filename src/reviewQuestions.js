@@ -15,7 +15,8 @@ const DEFINITIONS = [
   { key: 'interaction', title: '互动情况', multiple: false, options: [
     ['lecture', '讲授为主'], ['light', '简单互动'], ['frequent', '经常提问']] },
   { key: 'workload', title: '作业量', multiple: false, options: [
-    ['none', '几乎没有'], ['occasional', '偶尔有'], ['regular', '规律适中'], ['heavy', '极其繁重']] },
+    ['none', '几乎没有'], ['occasional', '偶尔有'], ['regular', '规律适中'],
+    ['quite_heavy', '比较繁重'], ['heavy', '极其繁重']] },
   { key: 'assignment_type', title: '作业/考核类型', multiple: true, options: [
     ['problems', '题目'], ['presentation', 'pre'], ['paper', '论文'], ['group', '小组作业'], ['exam', '考试'], ['other', '其他']] },
   { key: 'difficulty', title: '课程难度', multiple: false, preserveOnOmission: true, options: [

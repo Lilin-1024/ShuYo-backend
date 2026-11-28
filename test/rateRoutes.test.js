@@ -47,6 +47,11 @@ test('public reads, student reviews and course review feedback', async () => {
       'assignment_type', 'difficulty', 'gain', 'grading', 'teacher_tags'
     ]);
     assert.ok(questions.questions.every((question) => typeof question.description === 'string'));
+    const workload = questions.questions.find((question) => question.key === 'workload');
+    assert.deepEqual(workload.options.map((option) => [option.key, option.label]), [
+      ['none', '几乎没有'], ['occasional', '偶尔有'], ['regular', '规律适中'],
+      ['quite_heavy', '比较繁重'], ['heavy', '极其繁重']
+    ]);
     assert.equal(questions.questions.find((question) => question.key === 'grading').description,
       '单选，可跳过（建议在出分后填写）');
     const tagsQuestion = questions.questions.find((question) => question.key === 'teacher_tags');
@@ -102,10 +107,10 @@ test('public reads, student reviews and course review feedback', async () => {
     assert.match((await tooManyTags.json()).error, /最多选择3项/);
     assert.deepEqual(await json(await request(route, { token: first.token })), saved);
     const cleared = await request(route, { method: 'PUT', token: first.token, body: {
-      overall: 4, answers: { assignment_type: ['exam', 'other'], difficulty: [], teacher_tags: [] }
+      overall: 4, answers: { workload: 'quite_heavy', assignment_type: ['exam', 'other'], difficulty: [], teacher_tags: [] }
     } });
     assert.equal(cleared.status, 200);
-    assert.deepEqual((await json(cleared)).answers, { assignment_type: ['exam', 'other'] });
+    assert.deepEqual((await json(cleared)).answers, { workload: ['quite_heavy'], assignment_type: ['exam', 'other'] });
     assert.equal(await json(await request(route, { token: other.token })), null);
     const mine = await json(await request('/api/v1/student/rate/reviews', { token: first.token }));
     assert.equal(mine.reviews.length, 1);
@@ -114,6 +119,9 @@ test('public reads, student reviews and course review feedback', async () => {
     const unit = await json(await request(`/api/v1/rate/units/${unitId}`));
     assert.equal(unit.reviewCount, 1);
     assert.equal(unit.average, 9);
+    const workloadStats = unit.stats.find((stat) => stat.key === 'workload');
+    assert.deepEqual(workloadStats.options.filter((option) => option.count)
+      .map((option) => [option.key, option.label, option.percent]), [['quite_heavy', '比较繁重', 100]]);
     const assignmentStats = unit.stats.find((stat) => stat.key === 'assignment_type');
     assert.equal(assignmentStats.title, '作业/考核类型');
     assert.deepEqual(assignmentStats.options.filter((option) => option.count)

@@ -14,8 +14,10 @@ test('questionnaire order changes without renaming any legacy question or option
   assert.equal(new Set(QUESTIONS.map((question) => question.key)).size, QUESTIONS.length);
   for (const previous of previousQuestions) {
     const current = QUESTIONS.find((question) => question.key === previous.key);
-    const { description, ...legacyFields } = current;
-    assert.deepEqual(legacyFields, previous, previous.key);
+    const { description, options, ...legacyFields } = current;
+    const legacyOptions = previous.key === 'workload'
+      ? options.filter((option) => option.key !== 'quite_heavy') : options;
+    assert.deepEqual({ ...legacyFields, options: legacyOptions }, previous, previous.key);
   }
   assert.deepEqual(QUESTIONS.filter((question) => question.required).map((question) => question.key), ['overall']);
   assert.deepEqual(OMISSION_PRESERVED_QUESTION_KEYS, ['difficulty', 'teacher_tags']);
