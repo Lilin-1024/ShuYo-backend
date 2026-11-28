@@ -6,7 +6,7 @@ import { QUESTIONS, OMISSION_PRESERVED_QUESTION_KEYS, buildQuestionDescription }
 const previousQuestions = JSON.parse(readFileSync(new URL('./fixtures/reviewQuestions.v1.json', import.meta.url), 'utf8'));
 
 // This fixture is the nine-question contract from 8a521db, independent of the new ordering.
-test('questionnaire order changes without renaming any legacy question or option', () => {
+test('questionnaire changes preserve legacy question and option keys', () => {
   assert.deepEqual(QUESTIONS.map((question) => question.key), [
     'overall', 'attendance_freq', 'attendance_method', 'discipline', 'interaction', 'workload',
     'assignment_type', 'difficulty', 'gain', 'grading', 'teacher_tags'
@@ -17,7 +17,10 @@ test('questionnaire order changes without renaming any legacy question or option
     const { description, options, ...legacyFields } = current;
     const legacyOptions = previous.key === 'workload'
       ? options.filter((option) => option.key !== 'quite_heavy') : options;
-    assert.deepEqual({ ...legacyFields, options: legacyOptions }, previous, previous.key);
+    const expectedOptions = previous.key === 'assignment_type'
+      ? previous.options.map((option) => option.key === 'paper' ? { ...option, label: '论文/报告' } : option)
+      : previous.options;
+    assert.deepEqual({ ...legacyFields, options: legacyOptions }, { ...previous, options: expectedOptions }, previous.key);
   }
   assert.deepEqual(QUESTIONS.filter((question) => question.required).map((question) => question.key), ['overall']);
   assert.deepEqual(OMISSION_PRESERVED_QUESTION_KEYS, ['difficulty', 'teacher_tags']);

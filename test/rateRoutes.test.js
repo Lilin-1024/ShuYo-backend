@@ -71,7 +71,7 @@ test('public reads, student reviews and course review feedback', async () => {
     assert.equal(assignment.multiple, true);
     assert.equal(assignment.required, false);
     assert.deepEqual(assignment.options.map((option) => [option.key, option.label]), [
-      ['problems', '题目'], ['presentation', 'pre'], ['paper', '论文'],
+      ['problems', '题目'], ['presentation', 'pre'], ['paper', '论文/报告'],
       ['group', '小组作业'], ['exam', '考试'], ['other', '其他']
     ]);
 

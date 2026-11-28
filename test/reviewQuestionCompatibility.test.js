@@ -78,6 +78,8 @@ test('opening existing v1 answers preserves all rows, schema, identities and leg
         assert.equal(stat.options.find((item) => item.key === option.key).count, count);
       }
     }
+    const assignment = detail.stats.find((stat) => stat.key === 'assignment_type');
+    assert.equal(assignment.options.find((option) => option.key === 'paper').label, '论文/报告');
     for (const key of ['difficulty', 'teacher_tags']) {
       const stat = detail.stats.find((stat) => stat.key === key);
       assert.equal(stat.answered, 0);

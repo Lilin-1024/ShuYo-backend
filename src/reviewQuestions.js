@@ -18,7 +18,7 @@ const DEFINITIONS = [
     ['none', '几乎没有'], ['occasional', '偶尔有'], ['regular', '规律适中'],
     ['quite_heavy', '比较繁重'], ['heavy', '极其繁重']] },
   { key: 'assignment_type', title: '作业/考核类型', multiple: true, options: [
-    ['problems', '题目'], ['presentation', 'pre'], ['paper', '论文'], ['group', '小组作业'], ['exam', '考试'], ['other', '其他']] },
+    ['problems', '题目'], ['presentation', 'pre'], ['paper', '论文/报告'], ['group', '小组作业'], ['exam', '考试'], ['other', '其他']] },
   { key: 'difficulty', title: '课程难度', multiple: false, preserveOnOmission: true, options: [
     ['very_easy', '非常容易'], ['easy', '比较容易'], ['moderate', '难度适中'], ['hard', '比较困难'], ['very_hard', '非常困难']] },
   { key: 'gain', title: '课堂收获', multiple: false, options: [

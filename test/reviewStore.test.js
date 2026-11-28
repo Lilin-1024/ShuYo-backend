@@ -138,7 +138,7 @@ test('assignment assessment question keeps its key and adds exams before other',
     assert.equal(question.multiple, true);
     assert.equal(question.required, false);
     assert.deepEqual(question.options.map((option) => [option.key, option.label]), [
-      ['problems', '题目'], ['presentation', 'pre'], ['paper', '论文'],
+      ['problems', '题目'], ['presentation', 'pre'], ['paper', '论文/报告'],
       ['group', '小组作业'], ['exam', '考试'], ['other', '其他']
     ]);
   } finally {
