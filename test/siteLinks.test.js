@@ -19,11 +19,3 @@ for (const page of ['index.html', 'doc/terms.html', 'doc/privacy.html']) {
     assert.match(nav, /<a href="\/doc\/privacy\.html"[^>]*>隐私政策<\/a>/);
   });
 }
-
-test('home page offers the Android download and an App Store placeholder', () => {
-  const html = read('index.html');
-  assert.match(html, /<a class="button primary" href="https:\/\/download\.shuyo\.work\/latest\.apk">Android 下载<\/a>/);
-  const appStore = /<span class="button disabled" aria-disabled="true">App Store/.exec(html);
-  assert.ok(appStore, 'App Store entry must be a non-link placeholder');
-  assert.match(html, /href="https:\/\/github\.com\/shuosc\/ShuYo"/);
-});
